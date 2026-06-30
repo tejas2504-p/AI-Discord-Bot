@@ -1,0 +1,76 @@
+const mongoose = require('mongoose');
+
+// Define Schema for general key-value store
+const storeSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    value: { type: mongoose.Schema.Types.Mixed, required: true }
+}, { timestamps: true });
+
+const Store = mongoose.model('Store', storeSchema);
+
+/**
+ * MongoDB database service.
+ */
+class DatabaseService {
+    constructor() {
+        const mongoUri = process.env.MONGO_URI;
+        if (!mongoUri) {
+            console.error('DatabaseService Error: MONGO_URI is not set in environment variables.');
+            return;
+        }
+
+        mongoose.connect(mongoUri)
+            .then(() => console.log('DatabaseService: Connected to MongoDB.'))
+            .catch(error => console.error('DatabaseService: MongoDB connection error:', error));
+    }
+
+    /**
+     * Set a value in the store.
+     * @param {string} key 
+     * @param {any} value 
+     */
+    async set(key, value) {
+        try {
+            await Store.findOneAndUpdate(
+                { key },
+                { value },
+                { upsert: true, new: true }
+            );
+            return true;
+        } catch (error) {
+            console.error(`DatabaseService.set Error for key "${key}":`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get a value from the store.
+     * @param {string} key 
+     * @returns {any}
+     */
+    async get(key) {
+        try {
+            const doc = await Store.findOne({ key });
+            return doc ? doc.value : null;
+        } catch (error) {
+            console.error(`DatabaseService.get Error for key "${key}":`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete a value from the store.
+     * @param {string} key 
+     */
+    async delete(key) {
+        try {
+            const res = await Store.deleteOne({ key });
+            return res.deletedCount > 0;
+        } catch (error) {
+            console.error(`DatabaseService.delete Error for key "${key}":`, error);
+            throw error;
+        }
+    }
+}
+
+module.exports = new DatabaseService();
