@@ -14,6 +14,12 @@ It features dynamic slash commands, isolated user-level chat memory, automated r
 *   **Chat Memory Control (`/reset`):** Instantly wipe your personal chat history with the bot to start a fresh topic or clear context.
 *   **Code Generation & Explanation (`/code`):** Generate high-quality programming scripts and code snippets in any language (Python, JavaScript, C++, etc.) with clean documentation and step-by-step explanations.
 *   **Translation (`/translate`):** Translate text directly to and from Spanish, Japanese, French, German, or any target language instantly.
+*   **Image Generation (`/generate-image`):** Generate high-quality images from a text prompt using Google's Imagen 3.0 model, with customizable aspect ratio options (1:1, 16:9, 9:16, 4:3, 3:4).
+*   **Study Assistant Suite:**
+    *   **Generate Notes (`/notes`):** Automatically generate clean, structured study notes on any topic.
+    *   **Create Quizzes (`/quiz`):** Create customizable multiple-choice quizzes with answers and detailed explanations.
+    *   **Tailored Explanations (`/explain`):** Explain complex concepts with analogies tailored to Beginner, Intermediate, or Advanced audiences.
+    *   **Mock Interviews (`/interview`):** Conduct an interactive practice interview on any job role or topic with live feedback, session memory, and final evaluations.
 *   **Reliability & Resilience:** 
     *   **Mongoose Integration:** Connects to MongoDB Atlas to persist conversations across bot restarts.
     *   **Smart AI Retry Policy:** Automatically retries failed Gemini API calls (like `503 Service Unavailable`) using exponential backoff.
@@ -93,6 +99,11 @@ node index.js
 │   ├── reset.js         # Clear personal chat memory
 │   ├── code.js          # Code generator & explainer
 │   ├── translate.js     # Text translation engine
+│   ├── generate-image.js # Image generation engine (Imagen 3)
+│   ├── notes.js          # Study notes generator command
+│   ├── quiz.js           # Multiple choice quiz creator command
+│   ├── explain.js        # Conceptual explainer tool command
+│   ├── interview.js      # Mock interview coordinator command (interactive)
 │   └── ping.js          # Bot latency checker
 ├── config/
 │   └── config.json      # Embed color and theme configuration
