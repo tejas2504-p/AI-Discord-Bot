@@ -634,7 +634,7 @@ body {
 .form-control {
   background: var(--bg-sidebar);
   border: 1px solid var(--border-color);
-  color: #fff;
+  color: var(--text-primary);
   padding: 12px 16px;
   border-radius: 10px;
   font-family: var(--font-body);
