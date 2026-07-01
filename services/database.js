@@ -8,11 +8,37 @@ const storeSchema = new mongoose.Schema({
 
 const Store = mongoose.model('Store', storeSchema);
 
+// Define Schema for Guild Configuration
+const guildConfigSchema = new mongoose.Schema({
+    guildId: { type: String, required: true, unique: true },
+    welcomeChannelId: { type: String },
+    logChannelId: { type: String },
+    ticketCategoryId: { type: String }
+}, { timestamps: true });
+
+const GuildConfig = mongoose.model('GuildConfig', guildConfigSchema);
+
+// Define Schema for Leveling System
+const levelSchema = new mongoose.Schema({
+    guildId: { type: String, required: true },
+    userId: { type: String, required: true },
+    xp: { type: Number, default: 0 },
+    level: { type: Number, default: 0 },
+    lastMessageTimestamp: { type: Date, default: 0 }
+}, { timestamps: true });
+
+levelSchema.index({ guildId: 1, userId: 1 }, { unique: true });
+
+const Level = mongoose.model('Level', levelSchema);
+
 /**
  * MongoDB database service.
  */
 class DatabaseService {
     constructor() {
+        this.GuildConfig = GuildConfig;
+        this.Level = Level;
+        this.Store = Store;
         const mongoUri = process.env.MONGO_URI;
         if (!mongoUri) {
             console.error('DatabaseService Error: MONGO_URI is not set in environment variables.');

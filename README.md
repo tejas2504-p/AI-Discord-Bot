@@ -20,6 +20,12 @@ It features dynamic slash commands, isolated user-level chat memory, automated r
     *   **Create Quizzes (`/quiz`):** Create customizable multiple-choice quizzes with answers and detailed explanations.
     *   **Tailored Explanations (`/explain`):** Explain complex concepts with analogies tailored to Beginner, Intermediate, or Advanced audiences.
     *   **Mock Interviews (`/interview`):** Conduct an interactive practice interview on any job role or topic with live feedback, session memory, and final evaluations.
+*   **Server Features Suite:**
+    *   **Welcome Messages (`/setup-welcome`):** Send customized greeting embeds when new members join.
+    *   **Action & Audit Logging (`/setup-logs`):** Automatically logs deleted and updated messages, server joins, and departures to a designated channel.
+    *   **Interactive Ticket Support (`/setup-tickets`):** Deploy a button-based ticketing panel. Creates private support channels with closure buttons.
+    *   **Leveling System (`/rank`, `/leaderboard`):** Track XP, rank, levels, and view server leaderboard. Generates XP for active chats with a anti-spam cooldown.
+    *   **Staff Moderation (`/moderation`):** Administrative commands to kick, ban, timeout/mute, and purge messages.
 *   **Reliability & Resilience:** 
     *   **Mongoose Integration:** Connects to MongoDB Atlas to persist conversations across bot restarts.
     *   **Smart AI Retry Policy:** Automatically retries failed Gemini API calls (like `503 Service Unavailable`) using exponential backoff.
@@ -83,11 +89,20 @@ Before running the bot, you must register the commands with the Discord API:
 node deploy-commands.js
 ```
 
-### Step 2: Start the Bot
+### Step 2: Start the Bot & API Server
 Run the bot locally:
 ```bash
 node index.js
 ```
+This starts the bot and concurrently launches the API backend server on port `3001`.
+
+### Step 3: Start the Web Dashboard
+Navigate to the `dashboard/` directory and start the local React development server:
+```bash
+cd dashboard
+npm run dev
+```
+Open your browser and navigate to `http://localhost:5173` to access the dashboard!
 
 ---
 
@@ -104,6 +119,12 @@ node index.js
 │   ├── quiz.js           # Multiple choice quiz creator command
 │   ├── explain.js        # Conceptual explainer tool command
 │   ├── interview.js      # Mock interview coordinator command (interactive)
+│   ├── setup-welcome.js  # Setup welcome message channel
+│   ├── setup-logs.js     # Setup audit logs channel
+│   ├── setup-tickets.js  # Setup ticketing panel and channel configuration
+│   ├── moderation.js     # Moderate members (kick, ban, timeout, purge)
+│   ├── rank.js           # Check rank and XP levels
+│   ├── leaderboard.js    # Display top 10 users leaderboard
 │   └── ping.js          # Bot latency checker
 ├── config/
 │   └── config.json      # Embed color and theme configuration

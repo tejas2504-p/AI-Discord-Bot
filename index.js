@@ -10,6 +10,9 @@ require('./services/database');
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
     ]
 });
 
@@ -47,3 +50,7 @@ for (const file of eventFiles) {
 
 // Log in to Discord with your client's token
 client.login(process.env.DISCORD_TOKEN);
+
+// Start the Express API server
+const startServer = require('./services/server');
+startServer(client);
