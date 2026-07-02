@@ -1,11 +1,11 @@
 const { SlashCommandBuilder } = require('discord.js');
-const aiService = require('../services/ai');
+const routerService = require('../services/router');
 const databaseService = require('../services/database');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('ask')
-        .setDescription('Ask the AI bot any question.')
+        .setDescription('Ask the AI assistant a question (supports weather, news, sports, stocks, crypto).')
         .addStringOption(option =>
             option.setName('prompt')
                 .setDescription('The question or prompt to ask the AI')
@@ -13,14 +13,27 @@ module.exports = {
     async execute(interaction) {
         const prompt = interaction.options.getString('prompt');
         
-        // Defer the reply since AI generation might take longer than 3 seconds
+        // Defer the reply since AI routing and API fetching might take a few seconds
         await interaction.deferReply();
 
         try {
-            const historyKey = `chat_history:${interaction.user.id}`;
+            const userId = interaction.user.id;
+
+            // Ensure User Profile exists
+            let profile = await databaseService.UserProfile.findOne({ userId });
+            if (!profile) {
+                profile = new databaseService.UserProfile({
+                    userId,
+                    username: interaction.user.username
+                });
+                await profile.save();
+            }
+
+            const historyKey = `chat_history:${userId}`;
             let history = await databaseService.get(historyKey) || [];
 
-            const aiResponse = await aiService.generateContent(prompt, history);
+            // Call intelligent router (passes prompt and history context)
+            const responseText = await routerService.route(prompt, history);
             
             // Append successful turn to history
             history.push({
@@ -29,7 +42,7 @@ module.exports = {
             });
             history.push({
                 role: 'model',
-                parts: [{ text: aiResponse }]
+                parts: [{ text: responseText }]
             });
 
             // Limit history to the last 20 messages (10 rounds of back-and-forth)
@@ -41,11 +54,11 @@ module.exports = {
             await databaseService.set(historyKey, history);
 
             // Discord message limit is 2000 characters
-            if (aiResponse.length > 2000) {
-                const truncated = aiResponse.slice(0, 1900) + '\n\n*(Truncated due to Discord 2000-character limit)*';
+            if (responseText.length > 2000) {
+                const truncated = responseText.slice(0, 1900) + '\n\n*(Truncated due to Discord 2000-character limit)*';
                 await interaction.editReply(truncated);
             } else {
-                await interaction.editReply(aiResponse);
+                await interaction.editReply(responseText);
             }
         } catch (error) {
             console.error('Error in ask command:', error);

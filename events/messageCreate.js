@@ -10,6 +10,18 @@ module.exports = {
         const guildId = message.guild.id;
         const userId = message.author.id;
 
+        if (message.client.broadcastEvent) {
+            message.client.broadcastEvent('messageCreate', {
+                guildId: message.guild.id,
+                guildName: message.guild.name,
+                channelId: message.channel.id,
+                channelName: message.channel.name,
+                author: message.author.tag,
+                authorId: message.author.id,
+                content: message.content
+            });
+        }
+
         try {
             // Find or create level document for user in this guild
             let levelData = await databaseService.Level.findOne({ guildId, userId });
@@ -53,6 +65,16 @@ module.exports = {
                     await message.channel.send(`🎉 Congratulations ${message.author}! You have leveled up to **Level ${levelData.level}**!`);
                 } catch (sendError) {
                     console.error('Failed to send level-up message:', sendError);
+                }
+
+                if (message.client.io) {
+                    message.client.io.emit('level_up', {
+                        guildId,
+                        userId,
+                        userTag: message.author.tag,
+                        level: levelData.level,
+                        timestamp: new Date()
+                    });
                 }
             } else {
                 await levelData.save();

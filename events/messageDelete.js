@@ -7,6 +7,18 @@ module.exports = {
         // Ignore bot messages and direct messages
         if (!message.guild || (message.author && message.author.bot)) return;
 
+        if (message.client.broadcastEvent) {
+            message.client.broadcastEvent('messageDelete', {
+                guildId: message.guild.id,
+                guildName: message.guild.name,
+                channelId: message.channel.id,
+                channelName: message.channel.name,
+                author: message.author?.tag || 'Unknown',
+                authorId: message.author?.id || 'Unknown',
+                content: message.content || '*(No text content)*'
+            });
+        }
+
         try {
             const guildId = message.guild.id;
             const config = await databaseService.GuildConfig.findOne({ guildId });

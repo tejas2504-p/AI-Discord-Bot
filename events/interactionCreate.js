@@ -4,6 +4,49 @@ const databaseService = require('../services/database');
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
+        // Wrap interaction response methods to automatically log the bot's answers to the dashboard
+        const originalReply = interaction.reply.bind(interaction);
+        interaction.reply = async (options) => {
+            const result = await originalReply(options);
+            emitInteractionReply(interaction, options);
+            return result;
+        };
+
+        const originalEditReply = interaction.editReply.bind(interaction);
+        interaction.editReply = async (options) => {
+            const result = await originalEditReply(options);
+            emitInteractionReply(interaction, options);
+            return result;
+        };
+
+        const originalFollowUp = interaction.followUp.bind(interaction);
+        interaction.followUp = async (options) => {
+            const result = await originalFollowUp(options);
+            emitInteractionReply(interaction, options);
+            return result;
+        };
+
+        if (interaction.client.broadcastEvent) {
+            let detail = '';
+            if (interaction.isChatInputCommand()) {
+                detail = `Slash Command: /${interaction.commandName}`;
+            } else if (interaction.isButton()) {
+                detail = `Button Click: [${interaction.customId}]`;
+            } else {
+                detail = `Interaction: ${interaction.type}`;
+            }
+
+            interaction.client.broadcastEvent('interactionCreate', {
+                guildId: interaction.guild?.id || 'DM',
+                guildName: interaction.guild?.name || 'Direct Message',
+                channelId: interaction.channel?.id || 'N/A',
+                channelName: interaction.channel?.name || 'DM',
+                author: interaction.user.tag,
+                authorId: interaction.user.id,
+                content: detail
+            });
+        }
+
         if (interaction.isChatInputCommand()) {
             const command = interaction.client.commands.get(interaction.commandName);
 
@@ -123,5 +166,51 @@ async function handleButton(interaction) {
                 console.error('Error deleting ticket channel:', error);
             }
         }, 5000);
+    }
+}
+
+function emitInteractionReply(interaction, options) {
+    try {
+        if (!interaction.client.broadcastEvent) return;
+
+        let content = '';
+        if (typeof options === 'string') {
+            content = options;
+        } else if (options && typeof options === 'object') {
+            if (options.content) {
+                content = options.content;
+            } else if (options.embeds && options.embeds.length > 0) {
+                const embed = options.embeds[0];
+                const parts = [];
+                if (embed.data?.title || embed.title) parts.push(`**${embed.data?.title || embed.title}**`);
+                if (embed.data?.description || embed.description) parts.push(embed.data?.description || embed.description);
+                if (embed.data?.fields) {
+                    for (const f of embed.data.fields) {
+                        parts.push(`*${f.name}:* ${f.value}`);
+                    }
+                } else if (embed.fields) {
+                    for (const f of embed.fields) {
+                        parts.push(`*${f.name}:* ${f.value}`);
+                    }
+                }
+                content = parts.join('\n');
+            } else {
+                content = '*(Interactive Response)*';
+            }
+        }
+
+        if (content) {
+            interaction.client.broadcastEvent('messageCreate', {
+                guildId: interaction.guild?.id || 'DM',
+                guildName: interaction.guild?.name || 'Direct Message',
+                channelId: interaction.channel?.id || 'N/A',
+                channelName: interaction.channel?.name || 'DM',
+                author: interaction.client.user.tag,
+                authorId: interaction.client.user.id,
+                content: content
+            });
+        }
+    } catch (e) {
+        console.error('Error broadcasting interaction reply:', e);
     }
 }

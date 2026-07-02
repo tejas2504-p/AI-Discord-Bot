@@ -1,9 +1,38 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
+const { Server } = require('socket.io');
 const databaseService = require('./database');
 
 module.exports = function startServer(client) {
     const app = express();
+    const server = http.createServer(app);
+    const io = new Server(server, {
+        cors: {
+            origin: "*",
+            methods: ["GET", "POST"]
+        }
+    });
+
+    client.io = io; 
+
+    // In-memory buffer to store the last 50 events so clients get log history on connection/refresh
+    const eventBuffer = [];
+    const MAX_BUFFER_SIZE = 50;
+
+    client.broadcastEvent = (type, data) => {
+        const event = {
+            type,
+            timestamp: new Date(),
+            ...data
+        };
+        eventBuffer.push(event);
+        if (eventBuffer.length > MAX_BUFFER_SIZE) {
+            eventBuffer.shift();
+        }
+        io.emit('bot_event', event);
+    };
+
     const port = process.env.PORT || 3001;
 
     app.use(cors());
@@ -163,7 +192,108 @@ module.exports = function startServer(client) {
         }
     });
 
-    app.listen(port, () => {
-        console.log(`[API Server] Express server listening on port ${port}`);
+    // Socket.IO event handling
+    io.on('connection', (socket) => {
+        console.log(`[Socket.IO] Client connected: ${socket.id}`);
+
+        // Helper to format status
+        const getStatus = () => ({
+            status: client.isReady() ? 'online' : 'offline',
+            uptime: Math.floor(client.uptime / 1000), // in seconds
+            guilds: client.guilds.cache.size,
+            ping: client.ws.ping,
+            user: client.user ? {
+                tag: client.user.tag,
+                avatar: client.user.displayAvatarURL()
+            } : null
+        });
+
+        // Send initial status and cached events
+        socket.emit('bot_status', getStatus());
+        socket.emit('recent_events', eventBuffer);
+
+        // Get text channels for a guild
+        socket.on('get_channels', async (guildId) => {
+            try {
+                const guild = client.guilds.cache.get(guildId);
+                if (!guild) {
+                    socket.emit('channels_list', { guildId, error: 'Guild not found', channels: [] });
+                    return;
+                }
+                const channels = guild.channels.cache
+                    .filter(ch => ch.type === 0) // GuildText
+                    .map(ch => ({ id: ch.id, name: ch.name }));
+                socket.emit('channels_list', { guildId, channels });
+            } catch (e) {
+                socket.emit('channels_list', { guildId, error: e.message, channels: [] });
+            }
+        });
+
+        // Send message from dashboard bot dispatcher
+        socket.on('send_message', async ({ guildId, channelId, content }) => {
+            try {
+                const guild = client.guilds.cache.get(guildId);
+                if (!guild) {
+                    socket.emit('message_error', { error: 'Server context not found' });
+                    return;
+                }
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel || !channel.isTextBased()) {
+                    socket.emit('message_error', { error: 'Channel not found or not text-based' });
+                    return;
+                }
+                const sentMsg = await channel.send(content);
+                socket.emit('message_success', { 
+                    messageId: sentMsg.id, 
+                    channelId, 
+                    content,
+                    timestamp: sentMsg.createdAt 
+                });
+
+                // Emit and cache event using helper
+                client.broadcastEvent('messageCreate', {
+                    guildId,
+                    guildName: guild.name,
+                    channelId,
+                    channelName: channel.name,
+                    author: `${client.user.tag} (Sent from Dashboard)`,
+                    content: content
+                });
+            } catch (e) {
+                socket.emit('message_error', { error: e.message });
+            }
+        });
+
+        socket.on('disconnect', () => {
+            console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
+        });
+    });
+
+    // Broadcast bot status & ping statistics every 3 seconds
+    const statusInterval = setInterval(() => {
+        if (client.isReady()) {
+            io.emit('bot_status', {
+                status: 'online',
+                uptime: Math.floor(client.uptime / 1000),
+                guilds: client.guilds.cache.size,
+                ping: client.ws.ping,
+                user: client.user ? {
+                    tag: client.user.tag,
+                    avatar: client.user.displayAvatarURL()
+                } : null
+            });
+        } else {
+            io.emit('bot_status', {
+                status: 'offline',
+                uptime: 0,
+                guilds: 0,
+                ping: 999,
+                user: null
+            });
+        }
+    }, 3000);
+
+    server.listen(port, () => {
+        console.log(`[API Server] Express & Socket.IO server listening on port ${port}`);
     });
 };

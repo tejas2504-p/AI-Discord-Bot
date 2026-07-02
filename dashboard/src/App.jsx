@@ -14,8 +14,14 @@ import {
   User, 
   BookOpen, 
   ChevronRight,
-  TrendingUp
+  TrendingUp,
+  Terminal,
+  Send,
+  Wifi,
+  WifiOff,
+  Bell
 } from 'lucide-react';
+import { io } from 'socket.io-client';
 import './App.css';
 
 const API_BASE = 'http://localhost:3001';
@@ -30,6 +36,17 @@ function App() {
   const [selectedHistoryIndex, setSelectedHistoryIndex] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   
+  // Socket & Live State
+  const [socket, setSocket] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [liveLogs, setLiveLogs] = useState([]);
+  const [channels, setChannels] = useState([]);
+  const [selectedChannelId, setSelectedChannelId] = useState('');
+  const [dispatchMessage, setDispatchMessage] = useState('');
+  const [dispatchStatus, setDispatchStatus] = useState(''); // 'sending', 'success', 'error'
+  const [dispatchError, setDispatchError] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  
   // Settings Form State
   const [welcomeChannelId, setWelcomeChannelId] = useState('');
   const [logChannelId, setLogChannelId] = useState('');
@@ -43,11 +60,89 @@ function App() {
     fetchChatHistory();
   }, []);
 
-  // Auto-refresh stats every 10 seconds
+  // Initialize Socket.IO connection
   useEffect(() => {
-    const timer = setInterval(fetchStatus, 10000);
-    return () => clearInterval(timer);
-  }, []);
+    const socketInstance = io(API_BASE);
+    setSocket(socketInstance);
+
+    socketInstance.on('connect', () => {
+      setIsConnected(true);
+      console.log('Connected to socket server');
+    });
+
+    socketInstance.on('disconnect', () => {
+      setIsConnected(false);
+      console.log('Disconnected from socket server');
+    });
+
+    socketInstance.on('bot_status', (status) => {
+      setBotStatus(status);
+    });
+
+    socketInstance.on('channels_list', (data) => {
+      if (data.guildId === selectedGuildId && !data.error) {
+        setChannels(data.channels);
+        if (data.channels.length > 0) {
+          setSelectedChannelId(data.channels[0].id);
+        } else {
+          setSelectedChannelId('');
+        }
+      }
+    });
+
+    socketInstance.on('bot_event', (event) => {
+      setLiveLogs((prev) => [event, ...prev].slice(0, 100)); // Keep last 100 events
+    });
+
+    socketInstance.on('recent_events', (events) => {
+      // Sort with the newest first
+      setLiveLogs(events.slice().reverse());
+    });
+
+    socketInstance.on('level_up', (data) => {
+      const id = Date.now();
+      const newNotification = {
+        id,
+        title: '🎉 Level Up!',
+        text: `${data.userTag} reached Level ${data.level}!`,
+        type: 'success'
+      };
+      setNotifications((prev) => [newNotification, ...prev]);
+      
+      // Auto-dismiss after 5s
+      setTimeout(() => {
+        setNotifications((prev) => prev.filter(n => n.id !== id));
+      }, 5000);
+
+      // Refresh leaderboard if active guild context matches
+      if (selectedGuildId === data.guildId) {
+        fetchLeaderboard(data.guildId);
+      }
+    });
+
+    socketInstance.on('message_success', (data) => {
+      setDispatchStatus('success');
+      setDispatchMessage('');
+      setTimeout(() => setDispatchStatus(''), 3000);
+    });
+
+    socketInstance.on('message_error', (data) => {
+      setDispatchStatus('error');
+      setDispatchError(data.error || 'Failed to send message');
+      setTimeout(() => setDispatchStatus(''), 5000);
+    });
+
+    return () => {
+      socketInstance.disconnect();
+    };
+  }, [selectedGuildId]);
+
+  // Request channels when selected guild or socket changes
+  useEffect(() => {
+    if (socket && selectedGuildId) {
+      socket.emit('get_channels', selectedGuildId);
+    }
+  }, [socket, selectedGuildId]);
 
   // Fetch settings when guild changes
   useEffect(() => {
@@ -200,16 +295,29 @@ function App() {
             <Trophy size={20} />
             <span>Leaderboard</span>
           </button>
+
+          <button 
+            className={`nav-item ${activeTab === 'live' ? 'active' : ''}`}
+            onClick={() => setActiveTab('live')}
+          >
+            <Terminal size={20} />
+            <span>Live Monitor</span>
+          </button>
         </nav>
 
         {/* User / Bot Profile at the bottom of the sidebar */}
         <div className="sidebar-profile">
           {botStatus?.user ? (
             <>
-              <img src={botStatus.user.avatar} alt="Bot Avatar" className="profile-avatar" />
+              <div className="avatar-wrapper">
+                <img src={botStatus.user.avatar} alt="Bot Avatar" className="profile-avatar" />
+                <span className={`socket-indicator ${isConnected ? 'connected' : 'disconnected'}`} title={isConnected ? 'WebSocket Connected' : 'WebSocket Offline'}></span>
+              </div>
               <div className="profile-info">
                 <span className="profile-tag">{botStatus.user.tag}</span>
-                <span className="profile-status">Online</span>
+                <span className="profile-status">
+                  {isConnected ? 'Real-time Active' : 'Polling Fallback'}
+                </span>
               </div>
             </>
           ) : (
@@ -227,6 +335,7 @@ function App() {
             {activeTab === 'history' && 'Conversational Analytics'}
             {activeTab === 'settings' && 'Bot Configurations'}
             {activeTab === 'leaderboard' && 'Leveling Leaderboard'}
+            {activeTab === 'live' && 'Real-time Console & Dispatcher'}
           </h1>
           <div className="guild-selector-container">
             <span className="select-label">Server Context:</span>
@@ -556,7 +665,162 @@ function App() {
             </div>
           </div>
         )}
+        
+        {/* Live Stream / Console Tab Content */}
+        {activeTab === 'live' && (
+          <div className="tab-pane live-monitor-pane">
+            <div className="live-layout">
+              {/* Left Column: Live Terminal Events */}
+              <div className="live-events-panel glass-panel">
+                <div className="panel-header">
+                  <h2>Live Audit Log Feed</h2>
+                  <span className="live-status-indicator">
+                    <span className={`pulse-dot ${isConnected ? 'green' : 'gray'}`}></span>
+                    {isConnected ? 'LIVE FEED CONNECTED' : 'DISCONNECTED'}
+                  </span>
+                </div>
+                <p className="section-subtitle">Real-time Discord event logging console (displays message edits, deletions, commands, joins).</p>
+                
+                <div className="terminal-log-console">
+                  {liveLogs.map((log, idx) => {
+                    const timeStr = new Date(log.timestamp).toLocaleTimeString();
+                    
+                    let eventBadgeClass = 'badge-info';
+                    let eventTypeLabel = log.type;
+                    
+                    if (log.type === 'messageCreate') {
+                      eventBadgeClass = 'badge-msg';
+                      eventTypeLabel = 'MSG SENT';
+                    } else if (log.type === 'messageDelete') {
+                      eventBadgeClass = 'badge-del';
+                      eventTypeLabel = 'MSG DEL';
+                    } else if (log.type === 'messageUpdate') {
+                      eventBadgeClass = 'badge-edit';
+                      eventTypeLabel = 'MSG EDIT';
+                    } else if (log.type === 'interactionCreate') {
+                      eventBadgeClass = 'badge-cmd';
+                      eventTypeLabel = 'SLASH CMD';
+                    } else if (log.type === 'guildMemberAdd') {
+                      eventBadgeClass = 'badge-join';
+                      eventTypeLabel = 'JOIN';
+                    } else if (log.type === 'guildMemberRemove') {
+                      eventBadgeClass = 'badge-leave';
+                      eventTypeLabel = 'LEAVE';
+                    }
+
+                    return (
+                      <div key={idx} className="terminal-line">
+                        <span className="terminal-time">[{timeStr}]</span>
+                        <span className={`terminal-badge ${eventBadgeClass}`}>{eventTypeLabel}</span>
+                        <span className="terminal-guild">({log.guildName || 'DM'})</span>
+                        <span className="terminal-author">@{log.author}:</span>
+                        <span className="terminal-content">
+                          {log.type === 'messageUpdate' ? (
+                            <>
+                              <span className="old-text">{log.oldContent}</span>
+                              <span className="arrow-split"> ➔ </span>
+                              <span className="new-text">{log.newContent}</span>
+                            </>
+                          ) : (
+                            log.content || log.newContent || '*(No content)*'
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {liveLogs.length === 0 && (
+                    <div className="empty-terminal">
+                      <Terminal size={40} className="terminal-empty-icon" />
+                      <p>Listening for Discord events...</p>
+                      <span>Try sending, editing, or deleting a message in your Discord server.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Live Message Dispatcher */}
+              <div className="live-dispatcher-panel glass-panel">
+                <h2>Live Channel Dispatcher</h2>
+                <p className="section-subtitle">Send a message to a Discord channel directly through this dashboard as the bot.</p>
+                
+                <div className="dispatcher-form">
+                  <div className="form-group">
+                    <label>Target Text Channel</label>
+                    <select
+                      value={selectedChannelId}
+                      onChange={(e) => setSelectedChannelId(e.target.value)}
+                      className="form-control"
+                      disabled={channels.length === 0}
+                    >
+                      {channels.length > 0 ? (
+                        channels.map(ch => (
+                          <option key={ch.id} value={ch.id}>#{ch.name}</option>
+                        ))
+                      ) : (
+                        <option value="">-- No channels found / loading --</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Message Content</label>
+                    <textarea
+                      value={dispatchMessage}
+                      onChange={(e) => setDispatchMessage(e.target.value)}
+                      className="form-control text-area-message"
+                      placeholder="Type a message to send to Discord..."
+                      rows={4}
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (!selectedChannelId || !dispatchMessage.trim()) return;
+                      setDispatchStatus('sending');
+                      socket.emit('send_message', {
+                        guildId: selectedGuildId,
+                        channelId: selectedChannelId,
+                        content: dispatchMessage
+                      });
+                    }}
+                    className="btn-send-message"
+                    disabled={!isConnected || !selectedChannelId || !dispatchMessage.trim() || dispatchStatus === 'sending'}
+                  >
+                    <Send size={16} />
+                    <span>{dispatchStatus === 'sending' ? 'Sending...' : 'Send Message'}</span>
+                  </button>
+
+                  {dispatchStatus === 'success' && (
+                    <div className="dispatch-alert alert-success">
+                      <CheckCircle size={16} />
+                      <span>Message sent successfully!</span>
+                    </div>
+                  )}
+                  {dispatchStatus === 'error' && (
+                    <div className="dispatch-alert alert-danger">
+                      <XCircle size={16} />
+                      <span>{dispatchError}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
+
+      {/* Notifications Toast Overlay */}
+      <div className="toast-notifications-container">
+        {notifications.map(n => (
+          <div key={n.id} className={`toast-notification ${n.type}`}>
+            <Bell size={18} />
+            <div className="toast-content">
+              <h4>{n.title}</h4>
+              <p>{n.text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

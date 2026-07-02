@@ -5,6 +5,16 @@ module.exports = {
     name: Events.GuildMemberAdd,
     async execute(member) {
         try {
+            if (member.client.broadcastEvent) {
+                member.client.broadcastEvent('guildMemberAdd', {
+                    guildId: member.guild.id,
+                    guildName: member.guild.name,
+                    author: member.user.tag,
+                    authorId: member.id,
+                    content: `Joined the server. ID: ${member.id}`
+                });
+            }
+
             const guildId = member.guild.id;
             const config = await databaseService.GuildConfig.findOne({ guildId });
             if (!config) return;

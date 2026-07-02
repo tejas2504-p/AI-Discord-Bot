@@ -31,6 +31,17 @@ levelSchema.index({ guildId: 1, userId: 1 }, { unique: true });
 
 const Level = mongoose.model('Level', levelSchema);
 
+// Define Schema for User Profile & Settings
+const userProfileSchema = new mongoose.Schema({
+    userId: { type: String, required: true, unique: true },
+    username: { type: String, required: true },
+    preferredLanguage: { type: String, default: 'English' },
+    notificationsEnabled: { type: Boolean, default: true },
+    timezone: { type: String, default: 'UTC' }
+}, { timestamps: true });
+
+const UserProfile = mongoose.model('UserProfile', userProfileSchema);
+
 /**
  * MongoDB database service.
  */
@@ -39,6 +50,7 @@ class DatabaseService {
         this.GuildConfig = GuildConfig;
         this.Level = Level;
         this.Store = Store;
+        this.UserProfile = UserProfile;
         const mongoUri = process.env.MONGO_URI;
         if (!mongoUri) {
             console.error('DatabaseService Error: MONGO_URI is not set in environment variables.');

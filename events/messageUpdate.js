@@ -8,6 +8,19 @@ module.exports = {
         if (!newMessage.guild || (newMessage.author && newMessage.author.bot)) return;
         if (oldMessage.content === newMessage.content) return;
 
+        if (newMessage.client.broadcastEvent) {
+            newMessage.client.broadcastEvent('messageUpdate', {
+                guildId: newMessage.guild.id,
+                guildName: newMessage.guild.name,
+                channelId: newMessage.channel.id,
+                channelName: newMessage.channel.name,
+                author: newMessage.author?.tag || 'Unknown',
+                authorId: newMessage.author?.id || 'Unknown',
+                oldContent: oldMessage.content || '*(No text content)*',
+                newContent: newMessage.content || '*(No text content)*'
+            });
+        }
+
         try {
             const guildId = newMessage.guild.id;
             const config = await databaseService.GuildConfig.findOne({ guildId });

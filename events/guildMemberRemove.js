@@ -5,6 +5,16 @@ module.exports = {
     name: Events.GuildMemberRemove,
     async execute(member) {
         try {
+            if (member.client.broadcastEvent) {
+                member.client.broadcastEvent('guildMemberRemove', {
+                    guildId: member.guild.id,
+                    guildName: member.guild.name,
+                    author: member.user.tag,
+                    authorId: member.id,
+                    content: `Left the server. ID: ${member.id}`
+                });
+            }
+
             const guildId = member.guild.id;
             const config = await databaseService.GuildConfig.findOne({ guildId });
             if (!config || !config.logChannelId) return;
