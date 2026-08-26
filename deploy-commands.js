@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 require('dotenv').config();
 
+
 // Prepare list of commands
 const commands = [];
 const commandsPath = path.join(__dirname, 'commands');

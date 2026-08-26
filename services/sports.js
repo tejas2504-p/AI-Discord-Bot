@@ -9,8 +9,29 @@ class SportsService {
      * @returns {Promise<Array>} List of sports article/score items
      */
     async getSports(query) {
-        const searchTerm = query && query.trim() !== '' ? query.trim().toLowerCase() : '';
+        const searchTerm = query && query.trim() !== '' ? query.trim() : '';
         
+        if (searchTerm) {
+            // Fetch live query results from Google News Search with sports filter
+            const url = `https://news.google.com/rss/search?q=${encodeURIComponent(searchTerm + ' sports')}&hl=en-US&gl=US&ceid=US:en`;
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                    },
+                    signal: AbortSignal.timeout(6000)
+                });
+                if (!response.ok) {
+                    throw new Error(`Sports query search returned status: ${response.status}`);
+                }
+                const xml = await response.text();
+                return this.parseRSS(xml).slice(0, 5);
+            } catch (error) {
+                console.error(`SportsService search error for "${searchTerm}":`, error);
+                throw new Error(`Failed to search sports details for "${searchTerm}". Please try again later.`);
+            }
+        }
+
         // Fetch football-specific and general sports feeds in parallel
         const feeds = [
             'https://feeds.bbci.co.uk/sport/football/rss.xml',
@@ -46,19 +67,10 @@ class SportsService {
                 }
             }
 
-            // Filter items based on user search term
-            if (searchTerm) {
-                const filtered = uniqueItems.filter(item =>
-                    item.title.toLowerCase().includes(searchTerm) ||
-                    item.description.toLowerCase().includes(searchTerm)
-                );
-                return filtered.slice(0, 5);
-            }
-
             return uniqueItems.slice(0, 5); // Return trending sports if no search term
         } catch (error) {
-            console.error(`SportsService Error for query "${query}":`, error);
-            throw new Error(`Failed to retrieve sports details for "${query}". Please try again later.`);
+            console.error(`SportsService Error:`, error);
+            throw new Error(`Failed to retrieve trending sports. Please try again later.`);
         }
     }
 

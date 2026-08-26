@@ -4,6 +4,7 @@ const databaseService = require('../services/database');
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction) {
+        console.log(`[Interaction] Received /${interaction.commandName || interaction.customId}. Gateway Latency: ${Date.now() - interaction.createdTimestamp}ms`);
         // Wrap interaction response methods to automatically log the bot's answers to the dashboard
         const originalReply = interaction.reply.bind(interaction);
         interaction.reply = async (options) => {
