@@ -41,7 +41,7 @@ Do not write explanations, markdown comments, or code blocks. Just return the JS
 
         try {
             // Call Gemini directly for classification
-            const classificationText = await aiService.generateContent(`${routingSystemPrompt}\n\nUser Question: "${prompt}"`);
+            const classificationText = await aiService.generateContent(`${routingSystemPrompt}\n\nUser Question: "${prompt}"`, [], { disableTools: true });
             
             let classification = { type: 'general', query: prompt };
             try {
@@ -62,7 +62,7 @@ Here is the live weather data we fetched for "${classification.query}":
 ${JSON.stringify(weatherData)}
 
 Format this data into a friendly, helpful, conversational response. Mention current temperature, wind speed, humidity, and the 3-day forecast if available. Keep it readable.`;
-                        return await aiService.generateContent(formattingPrompt);
+                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
                     } catch (e) {
                         console.warn('[Router] Weather service failed, falling back to general:', e);
                         break; // Fallback to general AI response
@@ -77,7 +77,7 @@ Here is the live financial quote data we fetched for "${classification.query}":
 ${JSON.stringify(financeData)}
 
 Format this data into a professional yet conversational response. Report the price, currency, exchange, change, and change percent. If it's a crypto token, represent it clearly. Explain the date/time of the quote.`;
-                        return await aiService.generateContent(formattingPrompt);
+                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
                     } catch (e) {
                         console.warn('[Router] Finance service failed, falling back to general:', e);
                         break;
@@ -94,7 +94,7 @@ Here are the live news headlines we fetched for "${classification.query}":
 ${JSON.stringify(newsData)}
 
 Format these headlines into a clean, summaries list. Provide the title, date, and source of each article. Keep it concise, professional, and link the articles using markdown [Title](Link) links.`;
-                        return await aiService.generateContent(formattingPrompt);
+                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
                     } catch (e) {
                         console.warn('[Router] News service failed, falling back to general:', e);
                         break;
@@ -111,7 +111,7 @@ Here are the live sports updates we fetched for "${classification.query}":
 ${JSON.stringify(sportsData)}
 
 Format these details into an engaging sports summary. Report recent results, headlines, or fixtures, linking the articles with markdown [Title](Link) links.`;
-                        return await aiService.generateContent(formattingPrompt);
+                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
                     } catch (e) {
                         console.warn('[Router] Sports service failed, falling back to general:', e);
                         break;
@@ -128,7 +128,7 @@ Here is the live web search data we fetched for "${classification.query}":
 ${JSON.stringify(searchResults)}
 
 Format this search data into a highly informative, conversational response. Synthesize the findings, highlight key facts, and link to the sources using markdown [Title](Link) links. Keep it engaging and easy to read.`;
-                        return await aiService.generateContent(formattingPrompt);
+                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
                     } catch (e) {
                         console.warn('[Router] Search service failed, falling back to general:', e);
                         break;

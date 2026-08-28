@@ -27,7 +27,27 @@ class AIService {
             contents,
             systemInstruction: {
                 parts: [{
-                    text: "You are a helpful assistant. The server clock is set to the India (Asia/Kolkata) timezone. When asked for the current date or time (especially today's date, current day, current year, current time, or current time/date in India), always call the `getCurrentDateTime` tool instead of searching the web."
+                    text: `You are an AI assistant operating inside Discord.
+You have access to external tools that provide current information.
+You must use the appropriate tool whenever the user's request requires information that may be current, real-time, recent, or time-sensitive.
+Never guess current information from your internal knowledge when an appropriate tool is available.
+
+TOOL SELECTION LOGIC:
+- IF the user asks for information involving the current date or time (e.g. today's date, current day, current time, current year, today's date/time in India/Asia/Kolkata):
+  * Use getCurrentDateTime()
+  * Treat the tool result as the authoritative current date/time. Do not manually calculate, estimate, or hardcode today's date.
+- ELSE IF the user asks for information that may have changed recently or requires live web information (e.g. latest news, technology versions, company/product details, current prices, market details, recent releases, statistics, or information that may have changed since the model's knowledge was created):
+  * Use webSearch(query)
+  * Trust the web search results over outdated internal knowledge. Synthesize the returned content and preserve source URLs.
+- ELSE (for stable/general questions that do not require current information like "What is Java?", "Explain OOP", "What is inheritance?", "What is MongoDB?"):
+  * Do not call any tool; answer directly using your internal knowledge.
+
+If a question requires BOTH current date/time and web information (e.g. "What is the current date and latest AI news?"), use both tools when necessary.
+
+CONVERSATIONAL BEHAVIOR:
+- Tool calls happen internally. Do not output any technical implementation details (such as "I am calling getCurrentDateTime" or "Executing webSearch") to the user. Simply provide the final natural language answer once the tool results are received.
+- Do not claim to have searched the web if the webSearch tool was not actually executed.
+- If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.`
                 }]
             }
         };
@@ -47,7 +67,8 @@ class AIService {
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify(requestBody),
+                    signal: AbortSignal.timeout(15000) // 15 second timeout
                 });
 
                 // If Service Unavailable (503), retry with exponential backoff
@@ -63,7 +84,18 @@ class AIService {
                     console.error('Gemini API error status:', response.status, errData);
                     
                     if (response.status === 429) {
-                        throw new Error("Rate limit exceeded (Too Many Requests). Please wait a moment before trying again.");
+                        let waitMs = 30000; // Default 30s
+                        const message = errData && errData.error && errData.error.message;
+                        if (message) {
+                            const match = message.match(/retry in ([\d\.]+)s/i);
+                            if (match && match[1]) {
+                                waitMs = Math.ceil(parseFloat(match[1]) * 1000) + 1000;
+                            }
+                        }
+                        console.warn(`[Gemini] API returned 429. Automatically waiting ${waitMs}ms before retrying...`);
+                        await new Promise(resolve => setTimeout(resolve, waitMs));
+                        attempts--; // Do not count 429 wait towards attempts
+                        continue;
                     } else if (response.status === 503) {
                         throw new Error("The AI service is temporarily overloaded or unavailable (503). Please try again shortly.");
                     } else {
@@ -99,7 +131,7 @@ class AIService {
      * @param {Array} history Optional conversation history
      * @returns {Promise<string>} The response text from the AI
      */
-    async generateContent(prompt, history = []) {
+    async generateContent(prompt, history = [], options = {}) {
         if (!this.apiKey || this.apiKey === 'your_gemini_api_key_here') {
             throw new Error("AI feature is not configured. Please add a valid `GEMINI_API_KEY` to your `.env` file.");
         }
@@ -127,7 +159,7 @@ class AIService {
             parts: [{ text: prompt }]
         });
 
-        const tools = [{
+        const tools = options.disableTools ? null : [{
             functionDeclarations: [
                 {
                     name: 'webSearch',
@@ -173,7 +205,7 @@ class AIService {
                 
                 // Explicit routing: only execute getCurrentDateTime and webSearch
                 if (call.name === 'webSearch') {
-                    console.log(`[Gemini] Tool requested: webSearch`);
+                    console.log(`[ASK] Gemini requested tool: webSearch`);
                     
                     // Validate query argument
                     let query = call.args && call.args.query;
@@ -183,17 +215,17 @@ class AIService {
                         console.error(`[WebSearch] Error: Invalid or missing query argument`);
                         searchResults = [{ error: "Invalid or missing 'query' argument." }];
                     } else {
-                        console.log(`[WebSearch] Executing search`);
+                        console.log(`[ASK] executing tool`);
                         try {
                             searchResults = await searchService.search(query);
-                            console.log(`[Tavily] Search completed`);
+                            console.log(`[ASK] tool completed`);
                         } catch (err) {
                             console.error(`[WebSearch] Error:`, err.message);
                             searchResults = [{ error: `Search failed: ${err.message}` }];
                         }
                     }
 
-                    console.log(`[Gemini] Tool result received`);
+                    console.log(`[ASK] sending tool result to Gemini`);
 
                     // 1. Add model's turn requesting the function call
                     contents.push({
@@ -226,19 +258,19 @@ class AIService {
                     // Re-run loop to send function response back to Gemini
                     continue;
                 } else if (call.name === 'getCurrentDateTime') {
-                    console.log(`[Gemini] Tool requested: getCurrentDateTime`);
-                    console.log(`[Tool] Executing getCurrentDateTime`);
+                    console.log(`[ASK] Gemini requested tool: getCurrentDateTime`);
+                    console.log(`[ASK] executing tool`);
                     
                     let timeResult;
                     try {
                         timeResult = timeService.getCurrentDateTime();
-                        console.log(`[Tool] Result returned to Gemini`);
+                        console.log(`[ASK] tool completed`);
                     } catch (err) {
                         console.error(`[Tool] Error:`, err.message);
                         timeResult = { error: `Time retrieval failed: ${err.message}` };
                     }
 
-                    console.log(`[Gemini] Tool result received`);
+                    console.log(`[ASK] sending tool result to Gemini`);
 
                     // 1. Add model's turn requesting the function call
                     contents.push({

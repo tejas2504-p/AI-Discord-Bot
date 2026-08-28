@@ -11,12 +11,14 @@ module.exports = {
                 .setDescription('The question or prompt to ask the AI')
                 .setRequired(true)),
     async execute(interaction) {
-        const prompt = interaction.options.getString('prompt');
+        console.log('[ASK] command received');
         
-        // Defer the reply since AI routing and API fetching might take a few seconds
-        await interaction.deferReply();
-
         try {
+            // Defer the reply immediately before any database or API calls
+            await interaction.deferReply();
+            console.log('[ASK] interaction deferred');
+
+            const prompt = interaction.options.getString('prompt');
             const userId = interaction.user.id;
 
             // Ensure User Profile exists
@@ -32,8 +34,11 @@ module.exports = {
             const historyKey = `chat_history:${userId}`;
             let history = await databaseService.get(historyKey) || [];
 
-            // Call intelligent router (passes prompt and history context)
+            console.log('[ASK] sending request to Gemini');
+            
+            // Call intelligent router
             const responseText = await routerService.route(prompt, history);
+            console.log('[ASK] final Gemini response received');
             
             // Append successful turn to history
             history.push({
@@ -60,9 +65,15 @@ module.exports = {
             } else {
                 await interaction.editReply(responseText);
             }
+            console.log('[ASK] Discord response sent');
         } catch (error) {
-            console.error('Error in ask command:', error);
-            await interaction.editReply(error.message || 'An error occurred while processing your request.');
+            console.error("[ASK ERROR]", error);
+            try {
+                // Securely notify user without exposing stack traces or API keys
+                await interaction.editReply("Sorry, I couldn't process your request right now.");
+            } catch (replyErr) {
+                console.error("Failed to send error reply to Discord:", replyErr);
+            }
         }
     },
 };
