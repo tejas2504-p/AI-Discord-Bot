@@ -3,6 +3,7 @@ const weatherService = require('./weather');
 const newsService = require('./news');
 const sportsService = require('./sports');
 const financeService = require('./finance');
+const searchService = require('./search');
 
 /**
  * Intelligent Query Router.
@@ -28,12 +29,13 @@ class RouterService {
 - "news": queries asking about current news headlines, articles, or what happened recently regarding a topic.
 - "sports": football matches, scores, fixtures, standings, or sports news.
 - "finance": queries asking about current stock ticker prices, share values, index rates, or cryptocurrency prices (e.g. AAPL, BTC, Bitcoin, stocks).
+- "search": queries asking about general web search, current facts, recent events, definitions of new terms, or anything requiring live internet search that does not fit into specific categories like weather, news, sports, or finance.
 - "general": conversational banter, math, coding, general knowledge, explanations, translation, or questions that don't need real-time web stats.
 
 You must output ONLY valid, raw JSON with the following structure:
 {
-  "type": "weather" | "news" | "sports" | "finance" | "general",
-  "query": "the search term, city name, stock ticker, or sports team extracted from the prompt"
+  "type": "weather" | "news" | "sports" | "finance" | "search" | "general",
+  "query": "the search term, city name, stock ticker, sports team, or search query extracted from the prompt"
 }
 Do not write explanations, markdown comments, or code blocks. Just return the JSON string.`;
 
@@ -112,6 +114,23 @@ Format these details into an engaging sports summary. Report recent results, hea
                         return await aiService.generateContent(formattingPrompt);
                     } catch (e) {
                         console.warn('[Router] Sports service failed, falling back to general:', e);
+                        break;
+                    }
+                }
+
+                case 'search': {
+                    try {
+                        const searchResults = await searchService.search(classification.query);
+                        if (searchResults.length === 0) break;
+
+                        const formattingPrompt = `You are an AI assistant. The user asked: "${prompt}".
+Here is the live web search data we fetched for "${classification.query}":
+${JSON.stringify(searchResults)}
+
+Format this search data into a highly informative, conversational response. Synthesize the findings, highlight key facts, and link to the sources using markdown [Title](Link) links. Keep it engaging and easy to read.`;
+                        return await aiService.generateContent(formattingPrompt);
+                    } catch (e) {
+                        console.warn('[Router] Search service failed, falling back to general:', e);
                         break;
                     }
                 }
