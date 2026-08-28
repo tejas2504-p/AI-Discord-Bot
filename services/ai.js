@@ -104,7 +104,7 @@ class AIService {
             throw new Error("AI feature is not configured. Please add a valid `GEMINI_API_KEY` to your `.env` file.");
         }
 
-        console.log(`[AI] Processing user request`);
+        console.log(`[Gemini] Processing request`);
 
         const contents = [];
         
@@ -131,7 +131,7 @@ class AIService {
             functionDeclarations: [
                 {
                     name: 'webSearch',
-                    description: "Searches the web for current, recent, or real-time information, recent news, technology updates, current events, or any information that may have changed since the model's knowledge cutoff date. Do NOT use this tool for queries asking for the current date, current time, today's date, current day, or current year (use getCurrentDateTime instead).",
+                    description: "Searches the live web for current information. Use this tool when the user asks for recent, latest, current, real-time, news, or explicitly web-based information.",
                     parameters: {
                         type: 'OBJECT',
                         properties: {
@@ -145,7 +145,7 @@ class AIService {
                 },
                 {
                     name: 'getCurrentDateTime',
-                    description: "Returns the current date and time using the server clock. Use this tool whenever the user asks for the current date, current time, today's date, current day, current year, or other real-time date/time information.",
+                    description: "Returns the current date and time using the server clock. Use this tool whenever the user asks for today's date, current date, current time, current day, current year, or other real-time date and time information.",
                     parameters: {
                         type: 'OBJECT',
                         properties: {}
@@ -170,23 +170,30 @@ class AIService {
             // If Gemini decides to call a tool
             if (part.functionCall) {
                 const call = part.functionCall;
+                
+                // Explicit routing: only execute getCurrentDateTime and webSearch
                 if (call.name === 'webSearch') {
-                    const query = call.args.query;
+                    console.log(`[Gemini] Tool requested: webSearch`);
                     
-                    console.log(`[AI] Web search requested`);
-                    console.log(`[WebSearch] Query: "${query}"`);
-                    console.log(`[WebSearch] Calling Tavily`);
-                    
+                    // Validate query argument
+                    let query = call.args && call.args.query;
                     let searchResults;
-                    try {
-                        searchResults = await searchService.search(query);
-                        console.log(`[WebSearch] Results received`);
-                    } catch (err) {
-                        console.error(`[WebSearch] Error:`, err.message);
-                        searchResults = [{ error: `Search failed: ${err.message}` }];
+                    
+                    if (!query || typeof query !== 'string' || query.trim() === '') {
+                        console.error(`[WebSearch] Error: Invalid or missing query argument`);
+                        searchResults = [{ error: "Invalid or missing 'query' argument." }];
+                    } else {
+                        console.log(`[WebSearch] Executing search`);
+                        try {
+                            searchResults = await searchService.search(query);
+                            console.log(`[Tavily] Search completed`);
+                        } catch (err) {
+                            console.error(`[WebSearch] Error:`, err.message);
+                            searchResults = [{ error: `Search failed: ${err.message}` }];
+                        }
                     }
 
-                    console.log(`[AI] Processing search results`);
+                    console.log(`[Gemini] Tool result received`);
 
                     // 1. Add model's turn requesting the function call
                     contents.push({
@@ -195,7 +202,7 @@ class AIService {
                             {
                                 functionCall: {
                                     name: 'webSearch',
-                                    args: { query }
+                                    args: { query: query || "" }
                                 }
                             }
                         ]
@@ -219,19 +226,19 @@ class AIService {
                     // Re-run loop to send function response back to Gemini
                     continue;
                 } else if (call.name === 'getCurrentDateTime') {
-                    console.log(`[AI] Current date/time requested`);
-                    console.log(`[getCurrentDateTime] Calling time service`);
+                    console.log(`[Gemini] Tool requested: getCurrentDateTime`);
+                    console.log(`[Tool] Executing getCurrentDateTime`);
                     
                     let timeResult;
                     try {
                         timeResult = timeService.getCurrentDateTime();
-                        console.log(`[getCurrentDateTime] Result received:`, timeResult);
+                        console.log(`[Tool] Result returned to Gemini`);
                     } catch (err) {
-                        console.error(`[getCurrentDateTime] Error:`, err.message);
+                        console.error(`[Tool] Error:`, err.message);
                         timeResult = { error: `Time retrieval failed: ${err.message}` };
                     }
 
-                    console.log(`[AI] Processing time results`);
+                    console.log(`[Gemini] Tool result received`);
 
                     // 1. Add model's turn requesting the function call
                     contents.push({
@@ -262,14 +269,31 @@ class AIService {
                     // Re-run loop to send function response back to Gemini
                     continue;
                 } else {
-                    console.warn(`[AI] Unsupported function call: ${call.name}`);
-                    break;
+                    // Safe explicit routing block for arbitrary function calls
+                    console.warn(`[Gemini] Blocked arbitrary tool call attempt: ${call.name}`);
+                    
+                    contents.push({
+                        role: 'model',
+                        parts: [{ functionCall: call }]
+                    });
+                    
+                    contents.push({
+                        role: 'function',
+                        parts: [{
+                            functionResponse: {
+                                name: call.name,
+                                response: { error: `Unsupported tool name: ${call.name}` }
+                            }
+                        }]
+                    });
+                    
+                    continue;
                 }
             }
 
             // If it returns text content
             if (part.text) {
-                console.log(`[AI] Final response generated`);
+                console.log(`[Gemini] Generating final response`);
                 return part.text;
             }
 
