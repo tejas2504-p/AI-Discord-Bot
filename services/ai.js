@@ -1,6 +1,7 @@
 require('dotenv').config();
 const searchService = require('./search');
 const timeService = require('./time');
+const memoryService = require('./memory');
 
 /**
  * Service to interact with the Gemini AI model.
@@ -23,12 +24,9 @@ class AIService {
      */
     async executeGenerateContent(contents, tools) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-        const requestBody = { 
-            contents,
-            systemInstruction: {
-                parts: [{
-                    text: `You are an AI assistant operating inside Discord.
-You have access to external tools that provide current information.
+        let systemInstructionText = `You are an AI assistant operating inside Discord.`;
+        if (tools) {
+            systemInstructionText += `\nYou have access to external tools that provide current information and manage long-term user memories.
 You must use the appropriate tool whenever the user's request requires information that may be current, real-time, recent, or time-sensitive.
 Never guess current information from your internal knowledge when an appropriate tool is available.
 
@@ -44,10 +42,29 @@ TOOL SELECTION LOGIC:
 
 If a question requires BOTH current date/time and web information (e.g. "What is the current date and latest AI news?"), use both tools when necessary.
 
+LONG-TERM MEMORY INSTRUCTIONS:
+You have access to a persistent, user-isolated long-term memory store.
+- If the user explicitly shares details about themselves, their preferences, project description, goals, or tells you to remember something (e.g. "I prefer Python now", "My favorite language is Java", "Remember that my project is a Discord AI Agent"):
+  * Call save_memory(key, value, category, importance) or update_memory(key, value) if a memory on this topic already exists. Choose a clean lowercase key identifier.
+  * Do NOT save ordinary conversational questions (e.g. "What is Java?", "Explain OOP").
+- If the user asks you to "forget" something, or clear their data (e.g. "Forget my favorite language", "Forget everything you know about me"):
+  * Call delete_memory(key). Use "everything" or "*all*" as the key to wipe all records for the user.
+- If the user references their past preferences, projects, goals, or asks you "what do you know about me?", or if you need past user context to answer a query:
+  * Autonomously call search_memory(query) first to retrieve relevant memories.
+
 CONVERSATIONAL BEHAVIOR:
 - Tool calls happen internally. Do not output any technical implementation details (such as "I am calling getCurrentDateTime" or "Executing webSearch") to the user. Simply provide the final natural language answer once the tool results are received.
 - Do not claim to have searched the web if the webSearch tool was not actually executed.
-- If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.`
+- If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.`;
+        } else {
+            systemInstructionText += `\nProvide helpful, natural, and accurate responses directly using your knowledge base. Tool usage is currently disabled for this interaction.`;
+        }
+
+        const requestBody = { 
+            contents,
+            systemInstruction: {
+                parts: [{
+                    text: systemInstructionText
                 }]
             }
         };
@@ -191,6 +208,79 @@ CONVERSATIONAL BEHAVIOR:
                     parameters: {
                         type: 'OBJECT',
                         properties: {}
+                    }
+                },
+                {
+                    name: 'save_memory',
+                    description: "Saves a useful long-term memory, preference, project description, goal, or instruction about the current user. Do NOT save ordinary conversational banter or temp question contexts. Only call this when the user explicitly shares details about themselves, their preferences, or commands you to remember something.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            key: {
+                                type: 'STRING',
+                                description: "The short unique lowercase key identifier for the memory (e.g. 'favorite_language', 'project_name', 'theme_preference')."
+                            },
+                            value: {
+                                type: 'STRING',
+                                description: "The actual facts/information/preference text to store."
+                            },
+                            category: {
+                                type: 'STRING',
+                                description: "The category classification for this memory.",
+                                enum: ['preference', 'profile', 'project', 'goal', 'instruction', 'context', 'other']
+                            },
+                            importance: {
+                                type: 'INTEGER',
+                                description: "The scale of importance from 1 (lowest) to 10 (highest). Default is 5."
+                            }
+                        },
+                        required: ['key', 'value']
+                    }
+                },
+                {
+                    name: 'search_memory',
+                    description: "Searches the user's stored long-term memories using a query term. Use this autonomously when the user references their past preferences, projects, goals, or asks you what you know about them.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            query: {
+                                type: 'STRING',
+                                description: "The search query (keywords) to query the user's memory database."
+                            }
+                        },
+                        required: ['query']
+                    }
+                },
+                {
+                    name: 'update_memory',
+                    description: "Updates an existing saved memory value for the user when their preferences or details change. Do not create a duplicate key if a memory on the topic already exists.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            key: {
+                                type: 'STRING',
+                                description: "The key of the memory to update."
+                            },
+                            value: {
+                                type: 'STRING',
+                                description: "The new value to associate with the key."
+                            }
+                        },
+                        required: ['key', 'value']
+                    }
+                },
+                {
+                    name: 'delete_memory',
+                    description: "Deletes a saved memory by key, or clears all user memories if the user requests you to forget everything.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            key: {
+                                type: 'STRING',
+                                description: "The key of the memory to delete (e.g. 'favorite_language'). Use 'everything' or '*all*' to wipe all memories for this user."
+                            }
+                        },
+                        required: ['key']
                     }
                 }
             ]
@@ -343,6 +433,73 @@ CONVERSATIONAL BEHAVIOR:
 
                     // Re-run loop to send function response back to Gemini
                     continue;
+                } else if (call.name === 'save_memory') {
+                    const key = call.args && call.args.key;
+                    const value = call.args && call.args.value;
+                    const category = (call.args && call.args.category) || 'other';
+                    const importance = (call.args && call.args.importance) || 5;
+
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const result = await memoryService.saveMemory(options.userId, options.guildId, key, value, category, importance);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+
+                    contents.push({
+                        role: 'model',
+                        parts: [{ functionCall: { name: 'save_memory', args: { key, value, category, importance } } }]
+                    });
+                    contents.push({
+                        role: 'function',
+                        parts: [{ functionResponse: { name: 'save_memory', response: result ? { success: true } : { success: false, error: "Failed to save memory" } } }]
+                    });
+                    continue;
+                } else if (call.name === 'search_memory') {
+                    const query = call.args && call.args.query;
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const memories = await memoryService.searchMemories(options.userId, options.guildId, query);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+
+                    contents.push({
+                        role: 'model',
+                        parts: [{ functionCall: { name: 'search_memory', args: { query } } }]
+                    });
+                    contents.push({
+                        role: 'function',
+                        parts: [{ functionResponse: { name: 'search_memory', response: { results: memories } } }]
+                    });
+                    continue;
+                } else if (call.name === 'update_memory') {
+                    const key = call.args && call.args.key;
+                    const value = call.args && call.args.value;
+
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const result = await memoryService.updateMemory(options.userId, options.guildId, key, value);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+
+                    contents.push({
+                        role: 'model',
+                        parts: [{ functionCall: { name: 'update_memory', args: { key, value } } }]
+                    });
+                    contents.push({
+                        role: 'function',
+                        parts: [{ functionResponse: { name: 'update_memory', response: result ? { success: true } : { success: false, error: "Failed to update memory" } } }]
+                    });
+                    continue;
+                } else if (call.name === 'delete_memory') {
+                    const key = call.args && call.args.key;
+
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const result = await memoryService.deleteMemory(options.userId, options.guildId, key);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+
+                    contents.push({
+                        role: 'model',
+                        parts: [{ functionCall: { name: 'delete_memory', args: { key } } }]
+                    });
+                    contents.push({
+                        role: 'function',
+                        parts: [{ functionResponse: { name: 'delete_memory', response: { success: result } } }]
+                    });
+                    continue;
                 } else {
                     // Safe explicit routing block for arbitrary function calls
                     console.warn(`[Gemini] Blocked arbitrary tool call attempt: ${call.name}`);
@@ -389,8 +546,9 @@ CONVERSATIONAL BEHAVIOR:
     async generateContentGroq(prompt, history = [], options = {}) {
         console.log(`[Groq] Processing request`);
 
-        const systemInstruction = `You are an AI assistant operating inside Discord.
-You have access to external tools that provide current information.
+        let systemInstruction = `You are an AI assistant operating inside Discord.`;
+        if (!options.disableTools) {
+            systemInstruction += `\nYou have access to external tools that provide current information and manage long-term user memories.
 You must use the appropriate tool whenever the user's request requires information that may be current, real-time, recent, or time-sensitive.
 Never guess current information from your internal knowledge when an appropriate tool is available.
 
@@ -401,15 +559,28 @@ TOOL SELECTION LOGIC:
 - ELSE IF the user asks for information that may have changed recently or requires live web information (e.g. latest news, technology versions, company/product details, current prices, market details, recent releases, statistics, or information that may have changed since the model's knowledge was created):
   * Use webSearch(query)
   * Trust the web search results over outdated internal knowledge. Synthesize the returned content and preserve source URLs.
-- ELSE (for stable/general questions that do not require current information like "What is Java?", "Explain OOP", "What is inheritance?", "What is MongoDB?"):
+- ELSE (for stable/general questions do not require current information like "What is Java?", "Explain OOP", "What is inheritance?", "What is MongoDB?"):
   * Do not call any tool; answer directly using your internal knowledge.
 
 If a question requires BOTH current date/time and web information (e.g. "What is the current date and latest AI news?"), use both tools when necessary.
+
+LONG-TERM MEMORY INSTRUCTIONS:
+You have access to a persistent, user-isolated long-term memory store.
+- If the user explicitly shares details about themselves, their preferences, project description, goals, or tells you to remember something (e.g. "I prefer Python now", "My favorite language is Java", "Remember that my project is a Discord AI Agent"):
+  * Call save_memory(key, value, category, importance) or update_memory(key, value) if a memory on this topic already exists. Choose a clean lowercase key identifier.
+  * Do NOT save ordinary conversational questions (e.g. "What is Java?", "Explain OOP").
+- If the user asks you to "forget" something, or clear their data (e.g. "Forget my favorite language", "Forget everything you know about me"):
+  * Call delete_memory(key). Use "everything" or "*all*" as the key to wipe all records for the user.
+- If the user references their past preferences, projects, goals, or asks you "what do you know about me?", or if you need past user context to answer a query:
+  * Autonomously call search_memory(query) first to retrieve relevant memories.
 
 CONVERSATIONAL BEHAVIOR:
 - Tool calls happen internally. Do not output any technical implementation details (such as "I am calling getCurrentDateTime" or "Executing webSearch") to the user. Simply provide the final natural language answer once the tool results are received.
 - Do not claim to have searched the web if the webSearch tool was not actually executed.
 - If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.`;
+        } else {
+            systemInstruction += `\nProvide helpful, natural, and accurate responses directly using your knowledge base. Tool usage is currently disabled for this interaction.`;
+        }
 
         const messages = [
             { role: 'system', content: systemInstruction }
@@ -504,6 +675,91 @@ CONVERSATIONAL BEHAVIOR:
                                     properties: {}
                                 }
                             }
+                        },
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'save_memory',
+                                description: "Saves a useful long-term memory, preference, project description, goal, or instruction about the current user. Only call this when the user explicitly shares details about themselves, their preferences, or commands you to remember something.",
+                                parameters: {
+                                    type: 'object',
+                                    properties: {
+                                        key: {
+                                            type: 'string',
+                                            description: "The short unique lowercase key identifier for the memory (e.g. 'favorite_language', 'project_name')."
+                                        },
+                                        value: {
+                                            type: 'string',
+                                            description: "The actual facts/information/preference text to store."
+                                        },
+                                        category: {
+                                            type: 'string',
+                                            description: "The category classification for this memory.",
+                                            enum: ['preference', 'profile', 'project', 'goal', 'instruction', 'context', 'other']
+                                        },
+                                        importance: {
+                                            type: 'integer',
+                                            description: "Importance scale from 1 to 10. Default is 5."
+                                        }
+                                    },
+                                    required: ['key', 'value']
+                                }
+                            }
+                        },
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'search_memory',
+                                description: "Searches the user's stored long-term memories using a query term. Use this autonomously when the user references their past preferences, projects, goals, or asks you what you know about them.",
+                                parameters: {
+                                    type: 'object',
+                                    properties: {
+                                        query: {
+                                            type: 'string',
+                                            description: "The search query keywords."
+                                        }
+                                    },
+                                    required: ['query']
+                                }
+                            }
+                        },
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'update_memory',
+                                description: "Updates an existing saved memory value for the user when their preferences or details change. Do not create a duplicate key.",
+                                parameters: {
+                                    type: 'object',
+                                    properties: {
+                                        key: {
+                                            type: 'string',
+                                            description: "The key of the memory to update."
+                                        },
+                                        value: {
+                                            type: 'string',
+                                            description: "The new value."
+                                        }
+                                    },
+                                    required: ['key', 'value']
+                                }
+                            }
+                        },
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'delete_memory',
+                                description: "Deletes a saved memory by key, or clears all user memories if the user requests you to forget everything.",
+                                parameters: {
+                                    type: 'object',
+                                    properties: {
+                                        key: {
+                                            type: 'string',
+                                            description: "The key of the memory to delete. Use 'everything' or 'all' to wipe all memories."
+                                        }
+                                    },
+                                    required: ['key']
+                                }
+                            }
                         }
                     ],
                     tool_choice: options.disableTools ? undefined : 'auto'
@@ -565,6 +821,37 @@ CONVERSATIONAL BEHAVIOR:
                         result = { error: `Time retrieval failed: ${err.message}` };
                         if (showAskLogs) console.log(`[ASK 7] Tool completed`);
                     }
+                } else if (callName === 'save_memory') {
+                    const key = callArgs.key;
+                    const value = callArgs.value;
+                    const category = callArgs.category || 'other';
+                    const importance = callArgs.importance || 5;
+
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const res = await memoryService.saveMemory(options.userId, options.guildId, key, value, category, importance);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                    result = res ? { success: true } : { success: false, error: "Failed to save memory" };
+                } else if (callName === 'search_memory') {
+                    const query = callArgs.query;
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const memories = await memoryService.searchMemories(options.userId, options.guildId, query);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                    result = { results: memories };
+                } else if (callName === 'update_memory') {
+                    const key = callArgs.key;
+                    const value = callArgs.value;
+
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const res = await memoryService.updateMemory(options.userId, options.guildId, key, value);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                    result = res ? { success: true } : { success: false, error: "Failed to update memory" };
+                } else if (callName === 'delete_memory') {
+                    const key = callArgs.key;
+
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    const res = await memoryService.deleteMemory(options.userId, options.guildId, key);
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                    result = { success: res };
                 } else {
                     result = { error: `Unsupported tool name: ${callName}` };
                 }

@@ -16,7 +16,7 @@ class RouterService {
      * @param {Array} history Conversation history
      * @returns {Promise<string>} Conversational formatted response
      */
-    async route(prompt, history = []) {
+    async route(prompt, history = [], options = {}) {
         if (!prompt || prompt.trim() === '') {
             throw new Error("Empty prompt provided.");
         }
@@ -186,7 +186,7 @@ Format this search data into a highly informative, conversational response. Synt
 
             // Fallback to standard AI generation with conversation history
             const startFallback = Date.now();
-            const fallbackRes = await aiService.generateContent(prompt, history);
+            const fallbackRes = await aiService.generateContent(prompt, history, options);
             const durationFallback = ((Date.now() - startFallback) / 1000).toFixed(2);
             console.log(`[Router] [Timer] Fallback general model generation completed (took ${durationFallback}s)`);
             return fallbackRes;
@@ -194,7 +194,7 @@ Format this search data into a highly informative, conversational response. Synt
             console.error('[Router] Routing Error:', error);
             // Fallback to basic AI answer
             const startFallbackErr = Date.now();
-            const fallbackResErr = await aiService.generateContent(prompt, history);
+            const fallbackResErr = await aiService.generateContent(prompt, history, options);
             const durationFallbackErr = ((Date.now() - startFallbackErr) / 1000).toFixed(2);
             console.log(`[Router] [Timer] Error fallback model generation completed (took ${durationFallbackErr}s)`);
             return fallbackResErr;

@@ -78,12 +78,69 @@ When a query requires real-time information, the agent calls the **Tavily API**:
 
 ---
 
-## 💾 Memory
+## 💾 Memory & Knowledge Persistence
 
-Conversational memory is persisted using **MongoDB Mongoose**:
-*   **Stateful Chats:** The history of the last 20 messages (10 rounds) is saved in the database under `chat_history:${userId}`.
-*   **Isolation:** Memory is scoped per user, ensuring complete privacy and context isolation.
-*   **Controls:** Users can clear their memory at any time using `/reset` or view their active context with `/history`.
+The Discord AI Agent operates a dual-layer memory system to maintain rich, long-term state across sessions while retaining immediate conversational flow.
+
+```
+                  ┌──────────────────────────────────────────┐
+                  │            Discord User Input            │
+                  └────────────────────┬─────────────────────┘
+                                       │
+                    ┌──────────────────┴──────────────────┐
+                    ▼                                     ▼
+        ┌───────────────────────┐             ┌───────────────────────┐
+        │   Short-Term Memory   │             │   Long-Term Memory    │
+        │  (Session history)    │             │   (Persistent Facts)  │
+        ├───────────────────────┤             ├───────────────────────┤
+        │ Last 20 messages      │             │ Categorized User facts│
+        │ stored as a window    │             │ loaded on-demand via  │
+        │ in MongoDB doc store. │             │ autonomous LLM tools. │
+        └───────────────────────┘             └───────────────────────┘
+```
+
+### 1. Short-Term Memory vs Long-Term Memory
+*   **Short-Term Memory (Conversational History)**: Dynamically fetches and rolls the last 20 messages (10 turn-rounds) from the MongoDB general key-value store to maintain active dialog context.
+*   **Long-Term Memory (Agent Memory Tool)**: Exposes structured key-value database operations directly to the LLM. The agent autonomously writes, updates, queries, and wipes memories based on user preferences, profile details, projects, and custom instructions.
+
+### 2. Long-Term Memory MongoDB Schema
+Stored inside the `memories` collection with strict user isolation indexes:
+```javascript
+{
+  userId: { type: String, required: true },
+  guildId: { type: String, default: null },
+  key: { type: String, required: true }, // Compound unique index: { userId, key }
+  value: { type: Schema.Types.Mixed, required: true },
+  category: { 
+    type: String, 
+    enum: ['preference', 'profile', 'project', 'goal', 'instruction', 'context', 'other'],
+    default: 'other' 
+  },
+  importance: { type: Number, min: 1, max: 10, default: 5 },
+  source: { type: String, default: 'conversation' },
+  lastAccessedAt: { type: Date, default: Date.now }
+}
+```
+
+### 3. Exposed LLM Memory Tools
+Both Gemini and Groq reasoning engines possess these custom tool specifications:
+*   `save_memory(key, value, category, importance)`: Saves a new fact about the user.
+*   `search_memory(query)`: Autonomously queries key and value fields using regex index matching.
+*   `update_memory(key, value)`: Modifies existing values without duplicating keys.
+*   `delete_memory(key)`: Deletes individual keys or wips user memories entirely when `key = "everything"`.
+
+### 4. Example Interaction Workflow
+1.  **User**: *"I prefer Python now instead of Java."*
+2.  **Agent Action**: Detects context change, runs tool `update_memory(key="favorite_language", value="Python")`.
+3.  **User**: *"What project should I build?"*
+4.  **Agent Action**: Decides to query profile context, runs tool `search_memory(query="programming language preference")` -> returns `"Python"`.
+5.  **Agent Response**: *"Since you prefer Python, I suggest building a web scraper using FastAPI or a Discord bot using Discord.py..."*
+
+### 5. Running the Memory Test Suite
+You can validate the database schemas, upsert operations, duplicate prevention, and user isolation scopes by running:
+```bash
+node test_memory.js
+```
 
 ---
 

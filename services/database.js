@@ -42,6 +42,29 @@ const userProfileSchema = new mongoose.Schema({
 
 const UserProfile = mongoose.model('UserProfile', userProfileSchema);
 
+// Define Schema for Long-Term Memory
+const memorySchema = new mongoose.Schema({
+    userId: { type: String, required: true },
+    guildId: { type: String, default: null },
+    key: { type: String, required: true },
+    value: { type: mongoose.Schema.Types.Mixed, required: true },
+    category: {
+        type: String,
+        enum: ['preference', 'profile', 'project', 'goal', 'instruction', 'context', 'other'],
+        default: 'other'
+    },
+    importance: { type: Number, min: 1, max: 10, default: 5 },
+    source: { type: String, default: 'conversation' },
+    lastAccessedAt: { type: Date, default: Date.now }
+}, { timestamps: true });
+
+// Indexes
+memorySchema.index({ userId: 1, key: 1 }, { unique: true });
+memorySchema.index({ guildId: 1 });
+memorySchema.index({ lastAccessedAt: -1 });
+
+const Memory = mongoose.model('Memory', memorySchema);
+
 /**
  * MongoDB database service.
  */
@@ -51,6 +74,7 @@ class DatabaseService {
         this.Level = Level;
         this.Store = Store;
         this.UserProfile = UserProfile;
+        this.Memory = Memory;
         const mongoUri = process.env.MONGO_URI;
         if (!mongoUri) {
             console.error('DatabaseService Error: MONGO_URI is not set in environment variables.');

@@ -45,7 +45,7 @@ module.exports = {
             });
 
             // Call intelligent router with timeout race
-            const routePromise = routerService.route(prompt, history);
+            const routePromise = routerService.route(prompt, history, { userId, guildId: interaction.guildId });
             const responseText = await Promise.race([routePromise, timeoutPromise]);
             clearTimeout(timeoutId);
             
