@@ -40,8 +40,12 @@ You must output ONLY valid, raw JSON with the following structure:
 Do not write explanations, markdown comments, or code blocks. Just return the JSON string.`;
 
         try {
+            console.log(`[Router] [Timer] Starting classification...`);
+            const startClassify = Date.now();
             // Call Gemini directly for classification
             const classificationText = await aiService.generateContent(`${routingSystemPrompt}\n\nUser Question: "${prompt}"`, [], { disableTools: true });
+            const durationClassify = ((Date.now() - startClassify) / 1000).toFixed(2);
+            console.log(`[Router] [Timer] Classification completed (took ${durationClassify}s)`);
             
             let classification = { type: 'general', query: prompt };
             try {
@@ -56,13 +60,21 @@ Do not write explanations, markdown comments, or code blocks. Just return the JS
             switch (classification.type) {
                 case 'weather': {
                     try {
+                        const startWeather = Date.now();
                         const weatherData = await weatherService.getWeather(classification.query);
+                        const durationWeather = ((Date.now() - startWeather) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Weather search completed (took ${durationWeather}s)`);
+
                         const formattingPrompt = `You are an AI assistant. The user asked: "${prompt}".
 Here is the live weather data we fetched for "${classification.query}":
 ${JSON.stringify(weatherData)}
 
 Format this data into a friendly, helpful, conversational response. Mention current temperature, wind speed, humidity, and the 3-day forecast if available. Keep it readable.`;
-                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const startFormat = Date.now();
+                        const finalRes = await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const durationFormat = ((Date.now() - startFormat) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Weather formatting completed (took ${durationFormat}s)`);
+                        return finalRes;
                     } catch (e) {
                         console.warn('[Router] Weather service failed, falling back to general:', e);
                         break; // Fallback to general AI response
@@ -71,13 +83,21 @@ Format this data into a friendly, helpful, conversational response. Mention curr
 
                 case 'finance': {
                     try {
+                        const startFinance = Date.now();
                         const financeData = await financeService.getQuote(classification.query);
+                        const durationFinance = ((Date.now() - startFinance) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Finance search completed (took ${durationFinance}s)`);
+
                         const formattingPrompt = `You are an AI assistant. The user asked: "${prompt}".
 Here is the live financial quote data we fetched for "${classification.query}":
 ${JSON.stringify(financeData)}
 
 Format this data into a professional yet conversational response. Report the price, currency, exchange, change, and change percent. If it's a crypto token, represent it clearly. Explain the date/time of the quote.`;
-                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const startFormat = Date.now();
+                        const finalRes = await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const durationFormat = ((Date.now() - startFormat) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Finance formatting completed (took ${durationFormat}s)`);
+                        return finalRes;
                     } catch (e) {
                         console.warn('[Router] Finance service failed, falling back to general:', e);
                         break;
@@ -86,7 +106,11 @@ Format this data into a professional yet conversational response. Report the pri
 
                 case 'news': {
                     try {
+                        const startNews = Date.now();
                         const newsData = await newsService.getNews(classification.query);
+                        const durationNews = ((Date.now() - startNews) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] News search completed (took ${durationNews}s)`);
+
                         if (newsData.length === 0) break;
                         
                         const formattingPrompt = `You are an AI assistant. The user asked: "${prompt}".
@@ -94,7 +118,11 @@ Here are the live news headlines we fetched for "${classification.query}":
 ${JSON.stringify(newsData)}
 
 Format these headlines into a clean, summaries list. Provide the title, date, and source of each article. Keep it concise, professional, and link the articles using markdown [Title](Link) links.`;
-                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const startFormat = Date.now();
+                        const finalRes = await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const durationFormat = ((Date.now() - startFormat) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] News formatting completed (took ${durationFormat}s)`);
+                        return finalRes;
                     } catch (e) {
                         console.warn('[Router] News service failed, falling back to general:', e);
                         break;
@@ -103,7 +131,11 @@ Format these headlines into a clean, summaries list. Provide the title, date, an
 
                 case 'sports': {
                     try {
+                        const startSports = Date.now();
                         const sportsData = await sportsService.getSports(classification.query);
+                        const durationSports = ((Date.now() - startSports) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Sports search completed (took ${durationSports}s)`);
+
                         if (sportsData.length === 0) break;
 
                         const formattingPrompt = `You are an AI assistant. The user asked: "${prompt}".
@@ -111,7 +143,11 @@ Here are the live sports updates we fetched for "${classification.query}":
 ${JSON.stringify(sportsData)}
 
 Format these details into an engaging sports summary. Report recent results, headlines, or fixtures, linking the articles with markdown [Title](Link) links.`;
-                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const startFormat = Date.now();
+                        const finalRes = await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const durationFormat = ((Date.now() - startFormat) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Sports formatting completed (took ${durationFormat}s)`);
+                        return finalRes;
                     } catch (e) {
                         console.warn('[Router] Sports service failed, falling back to general:', e);
                         break;
@@ -120,7 +156,11 @@ Format these details into an engaging sports summary. Report recent results, hea
 
                 case 'search': {
                     try {
+                        const startSearch = Date.now();
                         const searchResults = await searchService.search(classification.query);
+                        const durationSearch = ((Date.now() - startSearch) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Search tool completed (took ${durationSearch}s)`);
+
                         if (searchResults.length === 0) break;
 
                         const formattingPrompt = `You are an AI assistant. The user asked: "${prompt}".
@@ -128,7 +168,11 @@ Here is the live web search data we fetched for "${classification.query}":
 ${JSON.stringify(searchResults)}
 
 Format this search data into a highly informative, conversational response. Synthesize the findings, highlight key facts, and link to the sources using markdown [Title](Link) links. Keep it engaging and easy to read.`;
-                        return await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const startFormat = Date.now();
+                        const finalRes = await aiService.generateContent(formattingPrompt, [], { disableTools: true });
+                        const durationFormat = ((Date.now() - startFormat) / 1000).toFixed(2);
+                        console.log(`[Router] [Timer] Search formatting completed (took ${durationFormat}s)`);
+                        return finalRes;
                     } catch (e) {
                         console.warn('[Router] Search service failed, falling back to general:', e);
                         break;
@@ -141,11 +185,19 @@ Format this search data into a highly informative, conversational response. Synt
             }
 
             // Fallback to standard AI generation with conversation history
-            return await aiService.generateContent(prompt, history);
+            const startFallback = Date.now();
+            const fallbackRes = await aiService.generateContent(prompt, history);
+            const durationFallback = ((Date.now() - startFallback) / 1000).toFixed(2);
+            console.log(`[Router] [Timer] Fallback general model generation completed (took ${durationFallback}s)`);
+            return fallbackRes;
         } catch (error) {
             console.error('[Router] Routing Error:', error);
             // Fallback to basic AI answer
-            return await aiService.generateContent(prompt, history);
+            const startFallbackErr = Date.now();
+            const fallbackResErr = await aiService.generateContent(prompt, history);
+            const durationFallbackErr = ((Date.now() - startFallbackErr) / 1000).toFixed(2);
+            console.log(`[Router] [Timer] Error fallback model generation completed (took ${durationFallbackErr}s)`);
+            return fallbackResErr;
         }
     }
 }

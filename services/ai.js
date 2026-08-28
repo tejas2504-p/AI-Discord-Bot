@@ -58,6 +58,8 @@ CONVERSATIONAL BEHAVIOR:
         let attempts = 0;
         const maxAttempts = 3;
         let backoffMs = 1000;
+        let rateLimitAttempts = 0;
+        const maxRateLimitAttempts = 1; // Only retry 429 once to avoid infinite loops
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -84,6 +86,10 @@ CONVERSATIONAL BEHAVIOR:
                     console.error('Gemini API error status:', response.status, errData);
                     
                     if (response.status === 429) {
+                        if (rateLimitAttempts >= maxRateLimitAttempts) {
+                            throw new Error("Gemini API rate limit exceeded. Please wait a moment before trying again.");
+                        }
+                        rateLimitAttempts++;
                         let waitMs = 30000; // Default 30s
                         const message = errData && errData.error && errData.error.message;
                         if (message) {
@@ -132,6 +138,10 @@ CONVERSATIONAL BEHAVIOR:
      * @returns {Promise<string>} The response text from the AI
      */
     async generateContent(prompt, history = [], options = {}) {
+        if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim() !== '' && process.env.GROQ_API_KEY !== 'your_groq_api_key_here') {
+            return this.generateContentGroq(prompt, history, options);
+        }
+
         if (!this.apiKey || this.apiKey === 'your_gemini_api_key_here') {
             throw new Error("AI feature is not configured. Please add a valid `GEMINI_API_KEY` to your `.env` file.");
         }
@@ -187,11 +197,33 @@ CONVERSATIONAL BEHAVIOR:
         }];
 
         let loopCount = 0;
-        const maxLoops = 5;
+        const maxLoops = 3; // Max 3 tool calls
 
         while (loopCount < maxLoops) {
             loopCount++;
+            
+            // Log only for the user /ask tool-calling flow (not classification/formatting)
+            const showAskLogs = !options.disableTools;
+            
+            if (showAskLogs) {
+                if (loopCount === 1) {
+                    console.log('[ASK 3] Sending request to Gemini');
+                } else {
+                    console.log('[ASK 8] Sending tool result back to Gemini');
+                }
+            } else {
+                console.log(`[Gemini] Processing request (Attempt ${loopCount})`);
+            }
+            
+            const startGeminiCall = Date.now();
             const content = await this.executeGenerateContent(contents, tools);
+            const durationGeminiCall = ((Date.now() - startGeminiCall) / 1000).toFixed(2);
+            
+            if (showAskLogs) {
+                console.log(`[ASK 4] Gemini response received (took ${durationGeminiCall}s)`);
+            } else {
+                console.log(`[Gemini] Response received (took ${durationGeminiCall}s)`);
+            }
             
             if (!content.parts || content.parts.length === 0) {
                 throw new Error("Received empty parts from Gemini API.");
@@ -202,10 +234,12 @@ CONVERSATIONAL BEHAVIOR:
             // If Gemini decides to call a tool
             if (part.functionCall) {
                 const call = part.functionCall;
+                if (showAskLogs) {
+                    console.log(`[ASK 5] Tool requested: ${call.name}`);
+                }
                 
                 // Explicit routing: only execute getCurrentDateTime and webSearch
                 if (call.name === 'webSearch') {
-                    console.log(`[ASK] Gemini requested tool: webSearch`);
                     
                     // Validate query argument
                     let query = call.args && call.args.query;
@@ -215,17 +249,22 @@ CONVERSATIONAL BEHAVIOR:
                         console.error(`[WebSearch] Error: Invalid or missing query argument`);
                         searchResults = [{ error: "Invalid or missing 'query' argument." }];
                     } else {
-                        console.log(`[ASK] executing tool`);
+                        if (showAskLogs) {
+                            console.log(`[ASK 6] Executing tool`);
+                        }
                         try {
                             searchResults = await searchService.search(query);
-                            console.log(`[ASK] tool completed`);
+                            if (showAskLogs) {
+                                console.log(`[ASK 7] Tool completed`);
+                            }
                         } catch (err) {
                             console.error(`[WebSearch] Error:`, err.message);
                             searchResults = [{ error: `Search failed: ${err.message}` }];
+                            if (showAskLogs) {
+                                console.log(`[ASK 7] Tool completed`);
+                            }
                         }
                     }
-
-                    console.log(`[ASK] sending tool result to Gemini`);
 
                     // 1. Add model's turn requesting the function call
                     contents.push({
@@ -258,19 +297,23 @@ CONVERSATIONAL BEHAVIOR:
                     // Re-run loop to send function response back to Gemini
                     continue;
                 } else if (call.name === 'getCurrentDateTime') {
-                    console.log(`[ASK] Gemini requested tool: getCurrentDateTime`);
-                    console.log(`[ASK] executing tool`);
+                    if (showAskLogs) {
+                        console.log(`[ASK 6] Executing tool`);
+                    }
                     
                     let timeResult;
                     try {
                         timeResult = timeService.getCurrentDateTime();
-                        console.log(`[ASK] tool completed`);
+                        if (showAskLogs) {
+                            console.log(`[ASK 7] Tool completed`);
+                        }
                     } catch (err) {
                         console.error(`[Tool] Error:`, err.message);
                         timeResult = { error: `Time retrieval failed: ${err.message}` };
+                        if (showAskLogs) {
+                            console.log(`[ASK 7] Tool completed`);
+                        }
                     }
-
-                    console.log(`[ASK] sending tool result to Gemini`);
 
                     // 1. Add model's turn requesting the function call
                     contents.push({
@@ -325,14 +368,228 @@ CONVERSATIONAL BEHAVIOR:
 
             // If it returns text content
             if (part.text) {
-                console.log(`[Gemini] Generating final response`);
+                if (showAskLogs) {
+                    console.log(`[ASK 9] Final Gemini response received`);
+                } else {
+                    console.log(`[Gemini] Generating final response`);
+                }
                 return part.text;
             }
 
             throw new Error("Received an unexpected content response structure (neither text nor functionCall).");
         }
 
-        throw new Error("Function calling loop exceeded maximum limit.");
+        console.warn("[Gemini] Tool loop limit exceeded.");
+        return "I'm sorry, I could not complete your request within the maximum number of steps. Please try simplifying your question.";
+    }
+
+    /**
+     * Generate content from a text prompt using Groq.
+     */
+    async generateContentGroq(prompt, history = [], options = {}) {
+        console.log(`[Groq] Processing request`);
+
+        const systemInstruction = `You are an AI assistant operating inside Discord.
+You have access to external tools that provide current information.
+You must use the appropriate tool whenever the user's request requires information that may be current, real-time, recent, or time-sensitive.
+Never guess current information from your internal knowledge when an appropriate tool is available.
+
+TOOL SELECTION LOGIC:
+- IF the user asks for information involving the current date or time (e.g. today's date, current day, current time, current year, today's date/time in India/Asia/Kolkata):
+  * Use getCurrentDateTime()
+  * Treat the tool result as the authoritative current date/time. Do not manually calculate, estimate, or hardcode today's date.
+- ELSE IF the user asks for information that may have changed recently or requires live web information (e.g. latest news, technology versions, company/product details, current prices, market details, recent releases, statistics, or information that may have changed since the model's knowledge was created):
+  * Use webSearch(query)
+  * Trust the web search results over outdated internal knowledge. Synthesize the returned content and preserve source URLs.
+- ELSE (for stable/general questions that do not require current information like "What is Java?", "Explain OOP", "What is inheritance?", "What is MongoDB?"):
+  * Do not call any tool; answer directly using your internal knowledge.
+
+If a question requires BOTH current date/time and web information (e.g. "What is the current date and latest AI news?"), use both tools when necessary.
+
+CONVERSATIONAL BEHAVIOR:
+- Tool calls happen internally. Do not output any technical implementation details (such as "I am calling getCurrentDateTime" or "Executing webSearch") to the user. Simply provide the final natural language answer once the tool results are received.
+- Do not claim to have searched the web if the webSearch tool was not actually executed.
+- If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.`;
+
+        const messages = [
+            { role: 'system', content: systemInstruction }
+        ];
+
+        // Add history
+        if (history && history.length > 0) {
+            for (const h of history) {
+                const role = h.role === 'model' ? 'assistant' : (h.role === 'function' ? 'tool' : 'user');
+                for (const part of h.parts) {
+                    if (part.text) {
+                        messages.push({ role, content: part.text });
+                    } else if (part.functionCall) {
+                        messages.push({
+                            role: 'assistant',
+                            tool_calls: [{
+                                id: part.functionCall.id || `call_${Math.random().toString(36).substring(2, 11)}`,
+                                type: 'function',
+                                function: {
+                                    name: part.functionCall.name,
+                                    arguments: JSON.stringify(part.functionCall.args || {})
+                                }
+                            }]
+                        });
+                    } else if (part.functionResponse) {
+                        messages.push({
+                            role: 'tool',
+                            tool_call_id: part.functionResponse.id || `call_${Math.random().toString(36).substring(2, 11)}`,
+                            name: part.functionResponse.name,
+                            content: typeof part.functionResponse.response === 'string' ? part.functionResponse.response : JSON.stringify(part.functionResponse.response)
+                        });
+                    }
+                }
+            }
+        }
+
+        // Add user prompt
+        messages.push({ role: 'user', content: prompt });
+
+        let loopCount = 0;
+        const maxLoops = 3;
+        const showAskLogs = !options.disableTools;
+
+        while (loopCount < maxLoops) {
+            loopCount++;
+
+            if (showAskLogs) {
+                if (loopCount === 1) {
+                    console.log('[ASK 3] Sending request to Gemini');
+                } else {
+                    console.log('[ASK 8] Sending tool result back to Gemini');
+                }
+            } else {
+                console.log(`[Groq] Processing request (Attempt ${loopCount})`);
+            }
+
+            const startCall = Date.now();
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: 'openai/gpt-oss-20b',
+                    messages,
+                    tools: options.disableTools ? undefined : [
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'webSearch',
+                                description: "Searches the live web for current information. Use this tool when the user asks for recent, latest, current, real-time, news, or explicitly web-based information.",
+                                parameters: {
+                                    type: 'object',
+                                    properties: {
+                                        query: {
+                                            type: 'string',
+                                            description: "The search query string to run on the web."
+                                        }
+                                    },
+                                    required: ['query']
+                                }
+                            }
+                        },
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'getCurrentDateTime',
+                                description: "Returns the current date and time using the server clock. Use this tool whenever the user asks for today's date, current date, current time, current day, current year, or other real-time date and time information.",
+                                parameters: {
+                                    type: 'object',
+                                    properties: {}
+                                }
+                            }
+                        }
+                    ],
+                    tool_choice: options.disableTools ? undefined : 'auto'
+                }),
+                signal: AbortSignal.timeout(15000)
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Groq API error Status ${res.status}: ${errText}`);
+            }
+
+            const data = await res.json();
+            const message = data.choices[0].message;
+            const duration = ((Date.now() - startCall) / 1000).toFixed(2);
+
+            if (showAskLogs) {
+                console.log(`[ASK 4] Gemini response received (took ${duration}s)`);
+            } else {
+                console.log(`[Groq] Response received (took ${duration}s)`);
+            }
+
+            // If Groq decides to call a tool
+            if (message.tool_calls && message.tool_calls.length > 0) {
+                const toolCall = message.tool_calls[0];
+                const callName = toolCall.function.name;
+                const callArgs = JSON.parse(toolCall.function.arguments || '{}');
+
+                if (showAskLogs) {
+                    console.log(`[ASK 5] Tool requested: ${callName}`);
+                }
+
+                // Add assistant message requesting tool calls
+                messages.push(message);
+
+                let result;
+                if (callName === 'webSearch') {
+                    const query = callArgs.query;
+                    if (!query || typeof query !== 'string' || query.trim() === '') {
+                        result = { error: "Invalid or missing 'query' argument." };
+                    } else {
+                        if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                        try {
+                            result = await searchService.search(query);
+                            if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                        } catch (err) {
+                            console.error(`[WebSearch] Error:`, err.message);
+                            result = { error: `Search failed: ${err.message}` };
+                            if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                        }
+                    }
+                } else if (callName === 'getCurrentDateTime') {
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool`);
+                    try {
+                        result = timeService.getCurrentDateTime();
+                        if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                    } catch (err) {
+                        console.error(`[Tool] Error:`, err.message);
+                        result = { error: `Time retrieval failed: ${err.message}` };
+                        if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                    }
+                } else {
+                    result = { error: `Unsupported tool name: ${callName}` };
+                }
+
+                // Add tool result to messages
+                messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    name: callName,
+                    content: JSON.stringify(result)
+                });
+
+                continue;
+            }
+
+            if (message.content) {
+                if (showAskLogs) {
+                    console.log(`[ASK 9] Final Gemini response received`);
+                }
+                return message.content;
+            }
+        }
+
+        console.warn("[Groq] Tool loop limit exceeded.");
+        return "I'm sorry, I could not complete your request within the maximum number of steps. Please try simplifying your question.";
     }
 
     /**
@@ -372,7 +629,8 @@ CONVERSATIONAL BEHAVIOR:
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: AbortSignal.timeout(15000) // 15 second timeout
                 });
 
                 // If Service Unavailable (503), retry with exponential backoff

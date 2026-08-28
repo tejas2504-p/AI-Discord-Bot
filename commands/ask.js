@@ -11,12 +11,12 @@ module.exports = {
                 .setDescription('The question or prompt to ask the AI')
                 .setRequired(true)),
     async execute(interaction) {
-        console.log('[ASK] command received');
+        console.log('[ASK 1] Command received');
         
         try {
             // Defer the reply immediately before any database or API calls
             await interaction.deferReply();
-            console.log('[ASK] interaction deferred');
+            console.log('[ASK 2] Discord interaction deferred');
 
             const prompt = interaction.options.getString('prompt');
             const userId = interaction.user.id;
@@ -34,11 +34,20 @@ module.exports = {
             const historyKey = `chat_history:${userId}`;
             let history = await databaseService.get(historyKey) || [];
 
-            console.log('[ASK] sending request to Gemini');
-            
-            // Call intelligent router
-            const responseText = await routerService.route(prompt, history);
-            console.log('[ASK] final Gemini response received');
+            // A single /ask request must NEVER remain in "thinking" indefinitely.
+            // Add a global safety timeout of 40 seconds.
+            const TIMEOUT_MS = 40000;
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    reject(new Error("ASK_GLOBAL_TIMEOUT"));
+                }, TIMEOUT_MS);
+            });
+
+            // Call intelligent router with timeout race
+            const routePromise = routerService.route(prompt, history);
+            const responseText = await Promise.race([routePromise, timeoutPromise]);
+            clearTimeout(timeoutId);
             
             // Append successful turn to history
             history.push({
@@ -58,6 +67,8 @@ module.exports = {
 
             await databaseService.set(historyKey, history);
 
+            console.log('[ASK 10] Sending Discord response');
+            
             // Discord message limit is 2000 characters
             if (responseText.length > 2000) {
                 const truncated = responseText.slice(0, 1900) + '\n\n*(Truncated due to Discord 2000-character limit)*';
@@ -65,12 +76,21 @@ module.exports = {
             } else {
                 await interaction.editReply(responseText);
             }
-            console.log('[ASK] Discord response sent');
+            console.log('[ASK 11] Discord response completed');
         } catch (error) {
             console.error("[ASK ERROR]", error);
+            
+            let userMessage = "Sorry, I couldn't process your request right now.";
+            if (error.message === "ASK_GLOBAL_TIMEOUT") {
+                userMessage = "Sorry, the AI service took too long to respond. Please try again.";
+            }
+
             try {
-                // Securely notify user without exposing stack traces or API keys
-                await interaction.editReply("Sorry, I couldn't process your request right now.");
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply(userMessage);
+                } else {
+                    await interaction.reply({ content: userMessage, ephemeral: true });
+                }
             } catch (replyErr) {
                 console.error("Failed to send error reply to Discord:", replyErr);
             }
