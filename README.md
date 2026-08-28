@@ -1,164 +1,218 @@
-# AI Discord Bot
+# 🤖 Discord AI Agent
 
-##  Overview
+An advanced, production-ready **AI-Powered Discord Agent** built with **Node.js** and **Discord.js (v14)**. The agent is powered by **Google Gemini** and **Groq (Llama 3.1)** APIs, utilizing an **Intelligent Query Router** and **Native Tool/Function Calling** to retrieve live data, execute multi-step reasoning, and maintain persistent conversation state using **MongoDB**.
 
-An intelligent, conversational Discord chatbot built with **Node.js** and **Discord.js (v14)**, powered by the **Google Gemini AI API** and backed by **MongoDB**. 
-
-It features dynamic slash commands, isolated user-level chat memory, automated retry policies for AI network calls, and robust database persistence.
+Unlike a traditional static chatbot, this agent analyzes user intent, calls external APIs (such as Tavily search, weather, news, sports, and finance services), manages personal conversational memory, and automates server moderation and support ticketing panels.
 
 ---
 
-##  Features
+## 🚀 Features
 
-*   **Intelligent Conversations (`/ask`):** Talk to the AI bot naturally. It remembers previous context and responses, creating a true conversational flow.
-*   **Chat Memory Control (`/reset`):** Instantly wipe your personal chat history with the bot to start a fresh topic or clear context.
-*   **Code Generation & Explanation (`/code`):** Generate high-quality programming scripts and code snippets in any language (Python, JavaScript, C++, etc.) with clean documentation and step-by-step explanations.
-*   **Translation (`/translate`):** Translate text directly to and from Spanish, Japanese, French, German, or any target language instantly.
-*   **Image Generation (`/generate-image`):** Generate high-quality images from a text prompt using Google's Imagen 3.0 model, with customizable aspect ratio options (1:1, 16:9, 9:16, 4:3, 3:4).
-*   **Study Assistant Suite:**
-    *   **Generate Notes (`/notes`):** Automatically generate clean, structured study notes on any topic.
-    *   **Create Quizzes (`/quiz`):** Create customizable multiple-choice quizzes with answers and detailed explanations.
-    *   **Tailored Explanations (`/explain`):** Explain complex concepts with analogies tailored to Beginner, Intermediate, or Advanced audiences.
-    *   **Mock Interviews (`/interview`):** Conduct an interactive practice interview on any job role or topic with live feedback, session memory, and final evaluations.
-*   **Server Features Suite:**
-    *   **Welcome Messages (`/setup-welcome`):** Send customized greeting embeds when new members join.
-    *   **Action & Audit Logging (`/setup-logs`):** Automatically logs deleted and updated messages, server joins, and departures to a designated channel.
-    *   **Interactive Ticket Support (`/setup-tickets`):** Deploy a button-based ticketing panel. Creates private support channels with closure buttons.
-    *   **Leveling System (`/rank`, `/leaderboard`):** Track XP, rank, levels, and view server leaderboard. Generates XP for active chats with a anti-spam cooldown.
-    *   **Staff Moderation (`/moderation`):** Administrative commands to kick, ban, timeout/mute, and purge messages.
-*   **Reliability & Resilience:** 
-    *   **Mongoose Integration:** Connects to MongoDB Atlas to persist conversations across bot restarts.
-    *   **Smart AI Retry Policy:** Automatically retries failed Gemini API calls (like `503 Service Unavailable`) using exponential backoff.
-    *   **User-Friendly Error Catching:** Friendly descriptions are returned in chat for rate limits (`429`) or server outages.
+*   **Intelligent Conversations (`/ask`):** Engaging, natural-language dialogues with the AI.
+*   **Dual AI Engine Support:** Supports both Google Gemini (default) and Groq (Llama 3.1) endpoints with fast auto-fallback.
+*   **Dynamic Intent Routing:** An intelligent classifier parses query topics and routes them to dedicated real-time APIs (Weather, Finance, Sports, News) before formatting responses.
+*   **Autonomous Tool/Function Calling:** The LLM autonomously triggers server tools (`getCurrentDateTime`, `webSearch`) for general queries when it needs real-time context.
+*   **Live Web Search (`/search`):** Search integration powered by **Tavily API**, allowing the agent to synthesize search results with full citations.
+*   **Persistent Memory (`/reset` / `/history`):** User conversation history is stored securely in **MongoDB Atlas**, enabling consistent context retention across server restarts.
+*   **Automated Ticketing (`/setup-tickets`):** Button-based support ticketing panel creating private, staff-managed support channels.
+*   **Audit Logging (`/setup-logs`):** Auto-logging of deleted messages, updated messages, and member joins/departures to designated staff channels.
+*   **Leveling System (`/rank` / `/leaderboard`):** Chat XP leveling system with anti-spam cooldowns.
+*   **Study Suite (`/notes`, `/quiz`, `/explain`, `/interview`):** Interactive study tools, including customizable mock interviews with live step-by-step evaluations.
 
 ---
 
-##  Technology Stack
+## 🧠 How the AI Agent Works
 
-*   **Runtime:** Node.js (v18+)
-*   **Discord Framework:** Discord.js v14
-*   **AI Engine:** Google Gemini API (via Native Fetch)
-*   **Database Object Modeling:** Mongoose & MongoDB Atlas
-*   **Environment Configuration:** Dotenv
+The agent processes requests using a combination of **Intent Routing** and **LLM Tool Calling**:
+
+```mermaid
+graph TD
+    User([User Prompt]) --> SlashAsk[Discord /ask Command]
+    SlashAsk --> Defer[interaction.deferReply]
+    Defer --> Router{Intent Routing Classifier}
+    
+    %% Specialized Branches
+    Router -- "weather" --> WeatherAPI[Weather Service]
+    Router -- "news" --> NewsAPI[News API]
+    Router -- "sports" --> SportsAPI[Sports Service]
+    Router -- "finance" --> FinanceAPI[Finance/Crypto API]
+    Router -- "search" --> SearchAPI[Tavily Search API]
+    
+    WeatherAPI & NewsAPI & SportsAPI & FinanceAPI & SearchAPI --> LLMFormat[LLM Formats Live Data]
+    
+    %% General Branch with Tool Loop
+    Router -- "general" --> LLMLoop[LLM Conversation Loop]
+    LLMLoop --> DecideTool{Tool Required?}
+    
+    DecideTool -- Yes --> CallTool[Execute Tool: webSearch / getCurrentDateTime]
+    CallTool --> AppendResult[Append Result to Context]
+    AppendResult --> LLMLoop
+    
+    DecideTool -- No --> FinalText[Generate Final Text]
+    
+    LLMFormat & FinalText --> EditReply[interaction.editReply]
+    EditReply --> Discord([Discord Output])
+```
 
 ---
 
-## ⚙️ Configuration & Installation
+## 🔧 AI Agent Capabilities
 
-### 1. Prerequisites
-Ensure you have the following installed on your machine:
-*   [Node.js](https://nodejs.org/) (v18.0.0 or higher)
-*   A [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) cluster (or local MongoDB database)
+A traditional AI chatbot simply parses text and generates static answers from static training weights. 
 
-### 2. Setup Guide
-
-Clone this repository and navigate to the project directory:
-```bash
-git clone https://github.com/your-username/AI-Discord-Bot.git
-cd AI-Discord-Bot
-```
-
-Install all required packages:
-```bash
-npm install
-```
-
-### 3. Environment Variables (`.env`)
-Create a `.env` file in the root directory and configure the following variables:
-
-```env
-DISCORD_TOKEN=your_discord_bot_token
-CLIENT_ID=your_discord_client_application_id
-GUILD_ID=your_testing_server_id (optional, instant command updates)
-GEMINI_API_KEY=your_gemini_api_key
-MONGO_URI=your_mongodb_connection_uri
-```
-
-> [!IMPORTANT]
-> **MongoDB Password Warning**: If your MongoDB database password contains special characters (like `@`, `?`, `/`, or `#`), you **must** URL-encode them in the `MONGO_URI`. For example, replace `@` with `%40`.
-> 
-> **SRV Record DNS Issue**: If you encounter connection issues or `querySrv ECONNREFUSED` errors in Node, configure the standard `mongodb://` replica-set format instead of `mongodb+srv://` inside your `.env` file.
+This project implements **Agentic Capabilities** by allowing the model to:
+1.  **Deconstruct goals** into sub-tasks (e.g. searching the web, analyzing multiple sources, and summarizing).
+2.  **Use External APIs** (Tavily, OpenWeatherMap, CoinGecko, NewsAPI) to pull ground-truth data instead of hallucinating.
+3.  **Execute loops with safety caps** (limited to a maximum of 3 consecutive tool calls to prevent infinite loops).
+4.  **Gracefully fail-fast** under rate limits or timeouts, notifying the user rather than leaving them stuck on a "thinking" indicator indefinitely.
 
 ---
 
-##  Running the Bot
+## 🌐 Live Web Search
 
-### Step 1: Deploy Slash Commands
-Before running the bot, you must register the commands with the Discord API:
-```bash
-node deploy-commands.js
-```
+When a query requires real-time information, the agent calls the **Tavily API**:
+*   The agent extracts search terms and performs an optimized web crawl.
+*   Tavily returns filtered, LLM-friendly snippets and URLs.
+*   The agent analyzes the results, synthesizes a cohesive response, and generates citations (e.g. `[Title](Link)`).
+*   If Tavily fails or times out, the tool loop catches the exception and returns the error safely to the agent to summarize without crashing the Discord process.
 
-### Step 2: Start the Bot & API Server
-Run the bot locally:
-```bash
-node index.js
-```
-This starts the bot and concurrently launches the API backend server on port `3001`.
+---
 
-### Step 3: Start the Web Dashboard
-Navigate to the `dashboard/` directory and start the local React development server:
-```bash
-cd dashboard
-npm run dev
-```
-Open your browser and navigate to `http://localhost:5173` to access the dashboard!
+## 💾 Memory
+
+Conversational memory is persisted using **MongoDB Mongoose**:
+*   **Stateful Chats:** The history of the last 20 messages (10 rounds) is saved in the database under `chat_history:${userId}`.
+*   **Isolation:** Memory is scoped per user, ensuring complete privacy and context isolation.
+*   **Controls:** Users can clear their memory at any time using `/reset` or view their active context with `/history`.
+
+---
+
+## 🛠️ Tech Stack
+
+| Technology | Purpose |
+|---|---|
+| **Node.js** | Runtime Environment |
+| **Discord.js (v14)** | Discord Gateway & Slash Command Integration |
+| **Google Gemini API** | Primary LLM Reasoning & Classification |
+| **Groq API** | High-speed Llama-3.1-based Secondary LLM |
+| **Tavily API** | AI-Optimized Live Web Search |
+| **MongoDB Atlas** | Database for Memory & Config Persistence |
+| **Express & Socket.IO** | Backend REST & WebSocket Server (port 3001) |
+| **React & Vite** | Frontend Dashboard (port 5173) |
 
 ---
 
 ## 📂 Project Structure
 
 ```
-├── commands/            # Slash Command Files
-│   ├── ask.js           # Conversational AI with context
-│   ├── reset.js         # Clear personal chat memory
-│   ├── code.js          # Code generator & explainer
-│   ├── translate.js     # Text translation engine
-│   ├── generate-image.js # Image generation engine (Imagen 3)
-│   ├── notes.js          # Study notes generator command
-│   ├── quiz.js           # Multiple choice quiz creator command
-│   ├── explain.js        # Conceptual explainer tool command
-│   ├── interview.js      # Mock interview coordinator command (interactive)
-│   ├── setup-welcome.js  # Setup welcome message channel
-│   ├── setup-logs.js     # Setup audit logs channel
-│   ├── setup-tickets.js  # Setup ticketing panel and channel configuration
-│   ├── moderation.js     # Moderate members (kick, ban, timeout, purge)
-│   ├── rank.js           # Check rank and XP levels
-│   ├── leaderboard.js    # Display top 10 users leaderboard
-│   └── ping.js          # Bot latency checker
+├── commands/               # Discord Slash Command Modules
+│   ├── ask.js              # State-aware AI question handler
+│   ├── clear-memory.js     # Wipe stored conversation database entry
+│   ├── code.js             # Code generation and explainer suites
+│   ├── generate-image.js   # Imagen-based image generation engine
+│   ├── history.js          # View user's active context memory
+│   ├── interview.js        # Practice mock interviews with evaluations
+│   ├── moderation.js       # Administrative ban/kick/timeout tools
+│   ├── setup-logs.js       # Configure server audit log channel
+│   ├── setup-tickets.js    # Configure support ticket panels
+│   └── translate.js        # Text translation helper
 ├── config/
-│   └── config.json      # Embed color and theme configuration
-├── events/              # Discord.js Event Handlers
-│   ├── interactionCreate.js
-│   └── ready.js
-├── services/            # Core Integration Services
-│   ├── ai.js            # Gemini API requests & retry handlers
-│   └── database.js      # MongoDB & Mongoose schemas
-├── .env                 # Environment secrets (ignored by git)
-├── deploy-commands.js   # Script to register slash commands
-├── index.js             # Main entry point
-└── package.json         # Node.js dependencies
+│   └── config.json         # Discord embed layout styles
+├── events/                 # Discord Server Event Handlers
+│   ├── interactionCreate.js # Slash command & button coordinator
+│   ├── guildMemberAdd.js   # Welcome messages & Member join logger
+│   └── messageDelete.js    # Deleted message logger
+├── services/               # Core Integration APIs & Middleware
+│   ├── ai.js               # Gemini & Groq REST APIs + Tool Calling Loop
+│   ├── database.js         # Mongoose Schemas & Mongo Connection Wrapper
+│   ├── router.js           # Classification Intent Router
+│   ├── search.js           # Tavily Web Crawl API
+│   ├── server.js           # REST API & Socket.IO admin backend
+│   └── time.js             # Server-time utilities
+├── dashboard/              # React/Vite Admin Dashboard
+├── deploy-commands.js      # Discord Slash Command deployment script
+├── index.js                # Main Bot entry point
+└── package.json            # Script dependencies
 ```
 
 ---
 
+## ⚙️ Installation & Setup
 
+### 1. Prerequisites
+*   Node.js (v18.0.0 or higher)
+*   MongoDB Instance (Atlas recommended)
 
-##  Learn More & Resources
+### 2. Installation
+Clone the repository and install the dependencies:
+```bash
+git clone https://github.com/tejas2504-p/AI-Discord-Bot.git
+cd AI-Discord-Bot
+npm install
+```
 
-To dive deeper into the technologies powering this bot, explore these official resources:
+### 3. Environment Configuration
+Create a `.env` file in the root directory:
+```env
+DISCORD_TOKEN=your_discord_bot_token
+CLIENT_ID=your_discord_client_id
+GUILD_ID=your_testing_server_id (optional)
+GEMINI_API_KEY=your_google_studio_api_key
+GROQ_API_KEY=your_groq_developer_api_key (optional, switches AI to Llama)
+TAVILY_API_KEY=your_tavily_search_api_key
+MONGO_URI=mongodb+srv://... (or local mongodb URI)
+```
 
-*   **Discord.js Framework:**
-    *   [Official Discord.js Documentation](https://discord.js.org/)
-    *   [Discord.js Guide](https://discordjs.guide/) (Best starting point for building slash commands and events)
-*   **Google Gemini AI:**
-    *   [Google AI Studio Console](https://aistudio.google.com/) (Get API keys, adjust safety settings, and try prompts in the playground)
-    *   [Gemini API Developer Documentation](https://ai.google.dev/docs)
-*   **MongoDB & Mongoose:**
-    *   [MongoDB Atlas Getting Started](https://www.mongodb.com/docs/atlas/getting-started/)
-    *   [Mongoose Guide & API Reference](https://mongoosejs.com/docs/guide.html)
+> [!NOTE]
+> If your MongoDB password contains special characters, make sure you URL-encode them (e.g. `@` as `%40`) in `MONGO_URI`.
 
-##  License
+### 4. Deployment & Execution
+Register slash commands with Discord:
+```bash
+node deploy-commands.js
+```
+
+Start the Discord Bot and API Backend server:
+```bash
+node index.js
+```
+
+Start the Admin web dashboard (in a separate terminal):
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+---
+
+## 📊 AI Bot vs AI Agent
+
+| AI Bot | AI Agent |
+|---|---|
+| Generates responses from static weights | Queries live, current internet databases |
+| Follows single-turn templates | Loops reasoning steps to find answers |
+| Lacks context of external tools | Autonomously calls weather/sports/finance/search tools |
+| Reactive to direct inputs | Capable of intent classification and routing |
+
+---
+
+## 🔮 Future Improvements
+
+-   **Autonomous RAG (Retrieval-Augmented Generation):** Custom PDF/doc indexing for localized server knowledge.
+-   **Advanced Vector Databases:** Integration with Pinecone/Milvus for long-term semantic user memory.
+-   **Multi-Agent Coordination:** Spawning separate agents specialized in coding, moderation, and support.
+-   **Scheduled Cron Tasks:** Autonomous scheduled alerts (e.g., daily market updates) posted directly to servers.
+
+---
+
+## 👨‍💻 Developer
+
+*   **GitHub:** [@tejas2504-p](https://github.com/tejas2504-p)
+*   **Project Repository:** [AI-Discord-Bot](https://github.com/tejas2504-p/AI-Discord-Bot)
+
+---
+
+## 📜 License
 
 This project is licensed under the **ISC License**.
-
