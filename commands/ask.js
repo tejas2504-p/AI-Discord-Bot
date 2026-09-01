@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const routerService = require('../services/router');
+const aiService = require('../services/ai');
 const databaseService = require('../services/database');
 
 module.exports = {
@@ -44,8 +44,8 @@ module.exports = {
                 }, TIMEOUT_MS);
             });
 
-            // Call intelligent router with timeout race
-            const routePromise = routerService.route(prompt, history, { userId, guildId: interaction.guildId });
+            // Call AI directly, bypassing router for single-request efficiency
+            const routePromise = aiService.generateContent(prompt, history, { userId, guildId: interaction.guildId });
             const responseText = await Promise.race([routePromise, timeoutPromise]);
             clearTimeout(timeoutId);
             
@@ -59,8 +59,8 @@ module.exports = {
                 parts: [{ text: responseText }]
             });
 
-            // Limit history to the last 20 messages (10 rounds of back-and-forth)
-            const MAX_HISTORY = 20;
+            // Limit history to the last 4 messages
+            const MAX_HISTORY = 4;
             if (history.length > MAX_HISTORY) {
                 history = history.slice(history.length - MAX_HISTORY);
             }
@@ -78,7 +78,12 @@ module.exports = {
             }
             console.log('[ASK 11] Discord response completed');
         } catch (error) {
-            console.error("[ASK ERROR]", error);
+            console.error("[ASK ERROR]");
+            console.error(`Error type: ${error.type || error.name || 'Unknown'}`);
+            console.error(`Error message: ${error.message || 'No message'}`);
+            console.error(`API status: ${error.status || 'N/A'}`);
+            console.error(`API response: ${error.apiResponse || 'N/A'}`);
+            console.error(`Stack: ${error.stack || 'No stack'}`);
             
             let userMessage = "Sorry, I couldn't process your request right now.";
             if (error.message === "ASK_GLOBAL_TIMEOUT") {

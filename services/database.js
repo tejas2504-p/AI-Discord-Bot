@@ -75,15 +75,27 @@ class DatabaseService {
         this.Store = Store;
         this.UserProfile = UserProfile;
         this.Memory = Memory;
+        this.connected = false;
+        
         const mongoUri = process.env.MONGO_URI;
         if (!mongoUri) {
             console.error('DatabaseService Error: MONGO_URI is not set in environment variables.');
             return;
         }
 
-        mongoose.connect(mongoUri)
-            .then(() => console.log('DatabaseService: Connected to MongoDB.'))
-            .catch(error => console.error('DatabaseService: MongoDB connection error:', error));
+        this.connectToDatabase(mongoUri);
+    }
+
+    async connectToDatabase(mongoUri) {
+        try {
+            await mongoose.connect(mongoUri);
+            this.connected = true;
+            console.log('DatabaseService: Connected to MongoDB.');
+        } catch (error) {
+            console.error('DatabaseService: MongoDB connection error:', error);
+            // Retry connection after 5 seconds
+            setTimeout(() => this.connectToDatabase(mongoUri), 5000);
+        }
     }
 
     /**
@@ -92,6 +104,9 @@ class DatabaseService {
      * @param {any} value 
      */
     async set(key, value) {
+        if (!this.connected) {
+            throw new Error('Database is not connected. Please try again shortly.');
+        }
         try {
             await Store.findOneAndUpdate(
                 { key },
@@ -111,6 +126,9 @@ class DatabaseService {
      * @returns {any}
      */
     async get(key) {
+        if (!this.connected) {
+            throw new Error('Database is not connected. Please try again shortly.');
+        }
         try {
             const doc = await Store.findOne({ key });
             return doc ? doc.value : null;
@@ -125,6 +143,9 @@ class DatabaseService {
      * @param {string} key 
      */
     async delete(key) {
+        if (!this.connected) {
+            throw new Error('Database is not connected. Please try again shortly.');
+        }
         try {
             const res = await Store.deleteOne({ key });
             return res.deletedCount > 0;

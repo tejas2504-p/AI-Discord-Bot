@@ -27,7 +27,7 @@ class SearchService {
         const url = 'https://api.tavily.com/search';
         const payload = {
             query: query.trim(),
-            max_results: options.maxResults || 5,
+            max_results: options.maxResults || 3,
             search_depth: options.searchDepth || 'basic',
             include_answer: false,
             include_images: false,
@@ -77,7 +77,7 @@ class SearchService {
                     return data.results.map(item => ({
                         title: item.title || 'Untitled',
                         url: item.url || '',
-                        content: item.content || ''
+                        content: item.content ? item.content.substring(0, 800) : ''
                     }));
                 }
 

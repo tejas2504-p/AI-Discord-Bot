@@ -104,7 +104,11 @@ CONVERSATIONAL BEHAVIOR:
                     
                     if (response.status === 429) {
                         if (rateLimitAttempts >= maxRateLimitAttempts) {
-                            throw new Error("Gemini API rate limit exceeded. Please wait a moment before trying again.");
+                            const err = new Error("Gemini API rate limit exceeded. Please wait a moment before trying again.");
+                            err.type = "GeminiAPIError";
+                            err.status = response.status;
+                            err.apiResponse = JSON.stringify(errData);
+                            throw err;
                         }
                         rateLimitAttempts++;
                         let waitMs = 30000; // Default 30s
@@ -120,9 +124,17 @@ CONVERSATIONAL BEHAVIOR:
                         attempts--; // Do not count 429 wait towards attempts
                         continue;
                     } else if (response.status === 503) {
-                        throw new Error("The AI service is temporarily overloaded or unavailable (503). Please try again shortly.");
+                        const err = new Error("The AI service is temporarily overloaded or unavailable (503). Please try again shortly.");
+                        err.type = "GeminiAPIError";
+                        err.status = response.status;
+                        err.apiResponse = JSON.stringify(errData);
+                        throw err;
                     } else {
-                        throw new Error(`Error from Gemini API: Status ${response.status}. Please check your API key and connection.`);
+                        const err = new Error(`Error from Gemini API: Status ${response.status}. Please check your API key and connection.`);
+                        err.type = "GeminiAPIError";
+                        err.status = response.status;
+                        err.apiResponse = JSON.stringify(errData);
+                        throw err;
                     }
                 }
 
@@ -156,7 +168,12 @@ CONVERSATIONAL BEHAVIOR:
      */
     async generateContent(prompt, history = [], options = {}) {
         if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim() !== '' && process.env.GROQ_API_KEY !== 'your_groq_api_key_here') {
-            return this.generateContentGroq(prompt, history, options);
+            try {
+                return await this.generateContentGroq(prompt, history, options);
+            } catch (err) {
+                console.warn(`[Failover] Groq API failed (${err.message}). Falling back to Gemini...`);
+                // Fall through to Gemini execution
+            }
         }
 
         if (!this.apiKey || this.apiKey === 'your_gemini_api_key_here') {
@@ -546,49 +563,21 @@ CONVERSATIONAL BEHAVIOR:
     async generateContentGroq(prompt, history = [], options = {}) {
         console.log(`[Groq] Processing request`);
 
-        let systemInstruction = `You are an AI assistant operating inside Discord.`;
+        let systemInstruction = `You are a helpful AI assistant in Discord.`;
         if (!options.disableTools) {
-            systemInstruction += `\nYou have access to external tools that provide current information and manage long-term user memories.
-You must use the appropriate tool whenever the user's request requires information that may be current, real-time, recent, or time-sensitive.
-Never guess current information from your internal knowledge when an appropriate tool is available.
-
-TOOL SELECTION LOGIC:
-- IF the user asks for information involving the current date or time (e.g. today's date, current day, current time, current year, today's date/time in India/Asia/Kolkata):
-  * Use getCurrentDateTime()
-  * Treat the tool result as the authoritative current date/time. Do not manually calculate, estimate, or hardcode today's date.
-- ELSE IF the user asks for information that may have changed recently or requires live web information (e.g. latest news, technology versions, company/product details, current prices, market details, recent releases, statistics, or information that may have changed since the model's knowledge was created):
-  * Use webSearch(query)
-  * Trust the web search results over outdated internal knowledge. Synthesize the returned content and preserve source URLs.
-- ELSE (for stable/general questions do not require current information like "What is Java?", "Explain OOP", "What is inheritance?", "What is MongoDB?"):
-  * Do not call any tool; answer directly using your internal knowledge.
-
-If a question requires BOTH current date/time and web information (e.g. "What is the current date and latest AI news?"), use both tools when necessary.
-
-LONG-TERM MEMORY INSTRUCTIONS:
-You have access to a persistent, user-isolated long-term memory store.
-- If the user explicitly shares details about themselves, their preferences, project description, goals, or tells you to remember something (e.g. "I prefer Python now", "My favorite language is Java", "Remember that my project is a Discord AI Agent"):
-  * Call save_memory(key, value, category, importance) or update_memory(key, value) if a memory on this topic already exists. Choose a clean lowercase key identifier.
-  * Do NOT save ordinary conversational questions (e.g. "What is Java?", "Explain OOP").
-- If the user asks you to "forget" something, or clear their data (e.g. "Forget my favorite language", "Forget everything you know about me"):
-  * Call delete_memory(key). Use "everything" or "*all*" as the key to wipe all records for the user.
-- If the user references their past preferences, projects, goals, or asks you "what do you know about me?", or if you need past user context to answer a query:
-  * Autonomously call search_memory(query) first to retrieve relevant memories.
-
-CONVERSATIONAL BEHAVIOR:
-- Tool calls happen internally. Do not output any technical implementation details (such as "I am calling getCurrentDateTime" or "Executing webSearch") to the user. Simply provide the final natural language answer once the tool results are received.
-- Do not claim to have searched the web if the webSearch tool was not actually executed.
-- If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.`;
+            systemInstruction += ` You have tools for web search, current time, and memory. Only use webSearch for recent/live data. Only use getCurrentDateTime for time queries. Otherwise, answer directly. Keep answers concise.`;
         } else {
-            systemInstruction += `\nProvide helpful, natural, and accurate responses directly using your knowledge base. Tool usage is currently disabled for this interaction.`;
+            systemInstruction += ` Provide helpful responses directly.`;
         }
 
         const messages = [
             { role: 'system', content: systemInstruction }
         ];
 
-        // Add history
-        if (history && history.length > 0) {
-            for (const h of history) {
+        // Reduce history to last 4 messages to save tokens
+        const recentHistory = history && history.length > 0 ? history.slice(-4) : [];
+        if (recentHistory.length > 0) {
+            for (const h of recentHistory) {
                 const role = h.role === 'model' ? 'assistant' : (h.role === 'function' ? 'tool' : 'user');
                 for (const part of h.parts) {
                     if (part.text) {
@@ -622,168 +611,118 @@ CONVERSATIONAL BEHAVIOR:
 
         let loopCount = 0;
         const maxLoops = 3;
+        let toolCallCount = 0;
         const showAskLogs = !options.disableTools;
 
         while (loopCount < maxLoops) {
             loopCount++;
-
-            if (showAskLogs) {
-                if (loopCount === 1) {
-                    console.log('[ASK 3] Sending request to Gemini');
-                } else {
-                    console.log('[ASK 8] Sending tool result back to Gemini');
-                }
-            } else {
-                console.log(`[Groq] Processing request (Attempt ${loopCount})`);
-            }
-
+            console.log(`[Groq] Processing request (Loop ${loopCount})`);
             const startCall = Date.now();
-            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
-                },
-                body: JSON.stringify({
-                    model: 'openai/gpt-oss-20b',
-                    messages,
-                    tools: options.disableTools ? undefined : [
-                        {
-                            type: 'function',
-                            function: {
-                                name: 'webSearch',
-                                description: "Searches the live web for current information. Use this tool when the user asks for recent, latest, current, real-time, news, or explicitly web-based information.",
-                                parameters: {
-                                    type: 'object',
-                                    properties: {
-                                        query: {
-                                            type: 'string',
-                                            description: "The search query string to run on the web."
-                                        }
-                                    },
-                                    required: ['query']
-                                }
-                            }
+            
+            let res;
+            let data;
+            let fetchAttempts = 0;
+            let backoffMs = 1000;
+            
+            while (fetchAttempts < 3) {
+                fetchAttempts++;
+                try {
+                    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
                         },
-                        {
-                            type: 'function',
-                            function: {
-                                name: 'getCurrentDateTime',
-                                description: "Returns the current date and time using the server clock. Use this tool whenever the user asks for today's date, current date, current time, current day, current year, or other real-time date and time information.",
-                                parameters: {
-                                    type: 'object',
-                                    properties: {}
-                                }
-                            }
-                        },
-                        {
-                            type: 'function',
-                            function: {
-                                name: 'save_memory',
-                                description: "Saves a useful long-term memory, preference, project description, goal, or instruction about the current user. Only call this when the user explicitly shares details about themselves, their preferences, or commands you to remember something.",
-                                parameters: {
-                                    type: 'object',
-                                    properties: {
-                                        key: {
-                                            type: 'string',
-                                            description: "The short unique lowercase key identifier for the memory (e.g. 'favorite_language', 'project_name')."
-                                        },
-                                        value: {
-                                            type: 'string',
-                                            description: "The actual facts/information/preference text to store."
-                                        },
-                                        category: {
-                                            type: 'string',
-                                            description: "The category classification for this memory.",
-                                            enum: ['preference', 'profile', 'project', 'goal', 'instruction', 'context', 'other']
-                                        },
-                                        importance: {
-                                            type: 'integer',
-                                            description: "Importance scale from 1 to 10. Default is 5."
-                                        }
-                                    },
-                                    required: ['key', 'value']
-                                }
-                            }
-                        },
-                        {
-                            type: 'function',
-                            function: {
-                                name: 'search_memory',
-                                description: "Searches the user's stored long-term memories using a query term. Use this autonomously when the user references their past preferences, projects, goals, or asks you what you know about them.",
-                                parameters: {
-                                    type: 'object',
-                                    properties: {
-                                        query: {
-                                            type: 'string',
-                                            description: "The search query keywords."
-                                        }
-                                    },
-                                    required: ['query']
-                                }
-                            }
-                        },
-                        {
-                            type: 'function',
-                            function: {
-                                name: 'update_memory',
-                                description: "Updates an existing saved memory value for the user when their preferences or details change. Do not create a duplicate key.",
-                                parameters: {
-                                    type: 'object',
-                                    properties: {
-                                        key: {
-                                            type: 'string',
-                                            description: "The key of the memory to update."
-                                        },
-                                        value: {
-                                            type: 'string',
-                                            description: "The new value."
-                                        }
-                                    },
-                                    required: ['key', 'value']
-                                }
-                            }
-                        },
-                        {
-                            type: 'function',
-                            function: {
-                                name: 'delete_memory',
-                                description: "Deletes a saved memory by key, or clears all user memories if the user requests you to forget everything.",
-                                parameters: {
-                                    type: 'object',
-                                    properties: {
-                                        key: {
-                                            type: 'string',
-                                            description: "The key of the memory to delete. Use 'everything' or 'all' to wipe all memories."
-                                        }
-                                    },
-                                    required: ['key']
-                                }
-                            }
-                        }
-                    ],
-                    tool_choice: options.disableTools ? undefined : 'auto'
-                }),
-                signal: AbortSignal.timeout(15000)
-            });
+                        body: JSON.stringify({
+                            model: 'llama-3.1-8b-instant',
+                            messages,
+                            max_tokens: 300,
+                            tools: options.disableTools ? undefined : [
+                                { type: 'function', function: { name: 'webSearch', description: "Searches the live web.", parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+                                { type: 'function', function: { name: 'getCurrentDateTime', description: "Returns current date and time.", parameters: { type: 'object', properties: {} } } },
+                                { type: 'function', function: { name: 'save_memory', description: "Saves a memory.", parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, category: { type: 'string' }, importance: { type: 'integer' } }, required: ['key', 'value'] } } },
+                                { type: 'function', function: { name: 'search_memory', description: "Searches memories.", parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+                                { type: 'function', function: { name: 'update_memory', description: "Updates a memory.", parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] } } },
+                                { type: 'function', function: { name: 'delete_memory', description: "Deletes a memory.", parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } } }
+                            ],
+                            tool_choice: options.disableTools ? undefined : 'auto'
+                        }),
+                        signal: AbortSignal.timeout(15000)
+                    });
 
-            if (!res.ok) {
-                const errText = await res.text();
-                throw new Error(`Groq API error Status ${res.status}: ${errText}`);
+                    if (res.status === 429 || res.status >= 500) {
+                        if (fetchAttempts >= 3) {
+                            const errText = await res.text();
+                            const apiErr = new Error(`Groq API error Status ${res.status}: ${errText}`);
+                            apiErr.type = "GroqAPIError";
+                            apiErr.status = res.status;
+                            apiErr.apiResponse = errText;
+                            throw apiErr;
+                        }
+                        const retryAfter = res.headers.get('retry-after') 
+                            || res.headers.get('x-ratelimit-reset-requests')
+                            || res.headers.get('x-ratelimit-reset-tokens');
+                            
+                        let delay = backoffMs;
+                        if (retryAfter) {
+                            const parsed = parseFloat(retryAfter);
+                            if (!isNaN(parsed)) {
+                                // Sometimes reset is in seconds, sometimes formatted weirdly. Assume seconds.
+                                delay = Math.max(parsed * 1000, backoffMs);
+                            }
+                        } else {
+                            try {
+                                const errBody = await res.clone().json();
+                                const message = errBody?.error?.message;
+                                if (message) {
+                                    const match = message.match(/retry in ([\d\.]+)s/i);
+                                    if (match && match[1]) {
+                                        delay = Math.max(parseFloat(match[1]) * 1000 + 100, backoffMs);
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+                        
+                        console.warn(`[Groq] API Error ${res.status}. Retrying in ${delay}ms...`);
+                        await new Promise(r => setTimeout(r, delay));
+                        backoffMs *= 2;
+                        continue;
+                    }
+                    
+                    if (!res.ok) {
+                        const errText = await res.text();
+                        const apiErr = new Error(`Groq API error Status ${res.status}: ${errText}`);
+                        apiErr.type = "GroqAPIError";
+                        apiErr.status = res.status;
+                        apiErr.apiResponse = errText;
+                        throw apiErr;
+                    }
+
+                    data = await res.json();
+                    break;
+                } catch (err) {
+                    if (fetchAttempts >= 3) throw err;
+                    console.warn(`[Groq] Network error: ${err.message}. Retrying in ${backoffMs}ms...`);
+                    await new Promise(r => setTimeout(r, backoffMs));
+                    backoffMs *= 2;
+                }
             }
 
-            const data = await res.json();
             const message = data.choices[0].message;
             const duration = ((Date.now() - startCall) / 1000).toFixed(2);
-
-            if (showAskLogs) {
-                console.log(`[ASK 4] Gemini response received (took ${duration}s)`);
-            } else {
-                console.log(`[Groq] Response received (took ${duration}s)`);
+            
+            if (data.usage) {
+                console.log(`[Groq] Token Usage - Prompt: ${data.usage.prompt_tokens}, Completion: ${data.usage.completion_tokens}, Total: ${data.usage.total_tokens}`);
             }
+            console.log(`[Groq] Response received (took ${duration}s)`);
 
             // If Groq decides to call a tool
             if (message.tool_calls && message.tool_calls.length > 0) {
+                toolCallCount++;
+                if (toolCallCount > 2) {
+                    console.warn("[Groq] Strict max tool call limit reached (2). Forcing text response.");
+                    return "I couldn't process this fully. Please try again or be more specific.";
+                }
                 const toolCall = message.tool_calls[0];
                 const callName = toolCall.function.name;
                 const callArgs = JSON.parse(toolCall.function.arguments || '{}');
