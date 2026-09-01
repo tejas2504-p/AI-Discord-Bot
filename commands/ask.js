@@ -45,7 +45,7 @@ module.exports = {
             });
 
             // Call AI directly, bypassing router for single-request efficiency
-            const routePromise = aiService.generateContent(prompt, history, { userId, guildId: interaction.guildId });
+            const routePromise = aiService.generateContent(prompt, history, { userId, guildId: interaction.guildId, interaction });
             const responseText = await Promise.race([routePromise, timeoutPromise]);
             clearTimeout(timeoutId);
             

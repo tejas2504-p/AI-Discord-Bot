@@ -144,6 +144,25 @@ node test_memory.js
 
 ---
 
+## 🤖 Discord Action Tools
+
+The AI Agent has been upgraded to understand user requests and natively perform actions inside the Discord server securely.
+
+**Supported Actions:**
+*   `send_message(channelId, message)` - Autonomously sends messages to specified channels.
+*   `create_channel(name, type)` - Creates new text or voice channels.
+*   `edit_message(messageId, content)` - Updates existing messages.
+*   `delete_message(messageId)` - Deletes messages.
+*   `add_reaction(messageId, emoji)` - Reacts to messages.
+*   `assign_role(userId, roleId)` - Assigns roles to members.
+*   `remove_role(userId, roleId)` - Removes roles.
+*   `get_server_info()` - Fetches live statistics about the Discord server.
+*   `get_member_info(userId)` - Retrieves user metadata.
+
+> **Security & Confirmations:** For destructive or sensitive actions (like deleting messages, assigning roles, or creating channels), the AI will pause its workflow and send an ephemeral **Confirm / Cancel** button prompt to the user who requested the action. If denied, the AI gracefully aborts the tool call.
+
+---
+
 ## 🛠️ Tech Stack
 
 | Technology | Purpose |

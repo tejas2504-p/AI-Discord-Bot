@@ -1,5 +1,6 @@
 require('dotenv').config();
 const searchService = require('./search');
+const discordActions = require('./discordActions');
 const timeService = require('./time');
 const memoryService = require('./memory');
 
@@ -502,6 +503,7 @@ CONVERSATIONAL BEHAVIOR:
                     });
                     continue;
                 } else if (call.name === 'delete_memory') {
+
                     const key = call.args && call.args.key;
 
                     if (showAskLogs) console.log(`[ASK 6] Executing tool`);
@@ -643,7 +645,16 @@ CONVERSATIONAL BEHAVIOR:
                                 { type: 'function', function: { name: 'save_memory', description: "Always save any details the user mentions about their life, trips, plans, or preferences, even if casually mentioned.", parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, category: { type: 'string' }, importance: { type: 'integer' } }, required: ['key', 'value'] } } },
                                 { type: 'function', function: { name: 'search_memory', description: "Searches memories.", parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
                                 { type: 'function', function: { name: 'update_memory', description: "Updates a memory.", parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] } } },
-                                { type: 'function', function: { name: 'delete_memory', description: "Deletes a memory.", parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } } }
+                                { type: 'function', function: { name: 'delete_memory', description: "Deletes a memory.", parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } } },
+                                { type: 'function', function: { name: 'send_message', description: "Sends a text message to a specific Discord channel.", parameters: { type: 'object', properties: { channelId: { type: 'string' }, message: { type: 'string' } }, required: ['channelId', 'message'] } } },
+                                { type: 'function', function: { name: 'create_channel', description: "Creates a new Discord channel.", parameters: { type: 'object', properties: { name: { type: 'string' }, type: { type: 'string' } }, required: ['name', 'type'] } } },
+                                { type: 'function', function: { name: 'edit_message', description: "Edits an existing Discord message.", parameters: { type: 'object', properties: { messageId: { type: 'string' }, content: { type: 'string' } }, required: ['messageId', 'content'] } } },
+                                { type: 'function', function: { name: 'delete_message', description: "Deletes a Discord message.", parameters: { type: 'object', properties: { messageId: { type: 'string' } }, required: ['messageId'] } } },
+                                { type: 'function', function: { name: 'add_reaction', description: "Adds an emoji reaction to a message.", parameters: { type: 'object', properties: { messageId: { type: 'string' }, emoji: { type: 'string' } }, required: ['messageId', 'emoji'] } } },
+                                { type: 'function', function: { name: 'assign_role', description: "Assigns a role to a server member.", parameters: { type: 'object', properties: { userId: { type: 'string' }, roleId: { type: 'string' } }, required: ['userId', 'roleId'] } } },
+                                { type: 'function', function: { name: 'remove_role', description: "Removes a role from a server member.", parameters: { type: 'object', properties: { userId: { type: 'string' }, roleId: { type: 'string' } }, required: ['userId', 'roleId'] } } },
+                                { type: 'function', function: { name: 'get_server_info', description: "Gets information about the current Discord server.", parameters: { type: 'object', properties: {} } } },
+                                { type: 'function', function: { name: 'get_member_info', description: "Gets information about a specific server member.", parameters: { type: 'object', properties: { userId: { type: 'string' } }, required: ['userId'] } } },
                             ],
                             tool_choice: options.disableTools ? undefined : 'auto'
                         }),
