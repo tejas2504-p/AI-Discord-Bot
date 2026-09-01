@@ -229,7 +229,7 @@ CONVERSATIONAL BEHAVIOR:
                 },
                 {
                     name: 'save_memory',
-                    description: "Saves a useful long-term memory, preference, project description, goal, or instruction about the current user. Do NOT save ordinary conversational banter or temp question contexts. Only call this when the user explicitly shares details about themselves, their preferences, or commands you to remember something.",
+                    description: "Always save any details the user mentions about their life, trips, plans, or preferences, even if mentioned casually. Extract as much detail as possible to build a comprehensive user profile.",
                     parameters: {
                         type: 'OBJECT',
                         properties: {
@@ -640,7 +640,7 @@ CONVERSATIONAL BEHAVIOR:
                             tools: options.disableTools ? undefined : [
                                 { type: 'function', function: { name: 'webSearch', description: "Searches the live web.", parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
                                 { type: 'function', function: { name: 'getCurrentDateTime', description: "Returns current date and time.", parameters: { type: 'object', properties: {} } } },
-                                { type: 'function', function: { name: 'save_memory', description: "Saves a memory.", parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, category: { type: 'string' }, importance: { type: 'integer' } }, required: ['key', 'value'] } } },
+                                { type: 'function', function: { name: 'save_memory', description: "Always save any details the user mentions about their life, trips, plans, or preferences, even if casually mentioned.", parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, category: { type: 'string' }, importance: { type: 'integer' } }, required: ['key', 'value'] } } },
                                 { type: 'function', function: { name: 'search_memory', description: "Searches memories.", parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
                                 { type: 'function', function: { name: 'update_memory', description: "Updates a memory.", parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] } } },
                                 { type: 'function', function: { name: 'delete_memory', description: "Deletes a memory.", parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] } } }
