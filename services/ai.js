@@ -636,7 +636,7 @@ CONVERSATIONAL BEHAVIOR:
                             'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
                         },
                         body: JSON.stringify({
-                            model: 'llama-3.1-8b-instant',
+                            model: 'groq/compound',
                             messages,
                             max_tokens: 300,
                             tools: options.disableTools ? undefined : [
