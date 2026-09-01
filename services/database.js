@@ -65,6 +65,24 @@ memorySchema.index({ lastAccessedAt: -1 });
 
 const Memory = mongoose.model('Memory', memorySchema);
 
+// Define Schema for Moderation Logs
+const moderationLogSchema = new mongoose.Schema({
+    userId: { type: String, required: true },
+    guildId: { type: String, required: true },
+    messageId: { type: String, required: true },
+    content: { type: String }, // Stored temporarily or hashed, but useful for logs
+    category: { type: String },
+    severity: { type: String, enum: ['low', 'medium', 'high'] },
+    confidence: { type: Number },
+    actionTaken: { type: String },
+    timestamp: { type: Date, default: Date.now }
+});
+
+moderationLogSchema.index({ guildId: 1, userId: 1 });
+moderationLogSchema.index({ timestamp: -1 });
+
+const ModerationLog = mongoose.model('ModerationLog', moderationLogSchema);
+
 /**
  * MongoDB database service.
  */
@@ -75,6 +93,7 @@ class DatabaseService {
         this.Store = Store;
         this.UserProfile = UserProfile;
         this.Memory = Memory;
+        this.ModerationLog = ModerationLog;
         this.connected = false;
         
         const mongoUri = process.env.MONGO_URI;

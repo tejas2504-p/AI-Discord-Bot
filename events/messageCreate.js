@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const databaseService = require('../services/database');
+const moderationService = require('../services/moderation');
 
 module.exports = {
     name: Events.MessageCreate,
@@ -21,6 +22,9 @@ module.exports = {
                 content: message.content
             });
         }
+        
+        // Pass to AI Moderation (Non-blocking)
+        moderationService.analyzeMessage(message);
 
         try {
             // Find or create level document for user in this guild

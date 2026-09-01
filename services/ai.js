@@ -655,6 +655,7 @@ CONVERSATIONAL BEHAVIOR:
                                 { type: 'function', function: { name: 'remove_role', description: "Removes a role from a server member.", parameters: { type: 'object', properties: { userId: { type: 'string' }, roleId: { type: 'string' } }, required: ['userId', 'roleId'] } } },
                                 { type: 'function', function: { name: 'get_server_info', description: "Gets information about the current Discord server.", parameters: { type: 'object', properties: {} } } },
                                 { type: 'function', function: { name: 'get_member_info', description: "Gets information about a specific server member.", parameters: { type: 'object', properties: { userId: { type: 'string' } }, required: ['userId'] } } },
+                                { type: 'function', function: { name: 'moderate_message', description: "Analyzes a message for toxicity/spam.", parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } } },
                             ],
                             tool_choice: options.disableTools ? undefined : 'auto'
                         }),

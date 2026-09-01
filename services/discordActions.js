@@ -194,6 +194,31 @@ class DiscordActions {
             return { success: false, error: error.message };
         }
     }
+
+    /**
+     * Manually moderate a message content via the AI Moderation tool
+     * @param {Object} interaction 
+     * @param {string} content 
+     */
+    async moderate_message(interaction, content) {
+        if (!content) return { success: false, error: "Content is required." };
+        try {
+            const modService = require('./moderation');
+            const result = await modService.callAI(content);
+            if (!result) return { success: false, error: "AI Moderation failed to return a valid response." };
+            return {
+                success: true,
+                safe: result.safe,
+                category: result.category,
+                severity: result.severity,
+                confidence: result.confidence,
+                reason: result.reason
+            };
+        } catch (error) {
+            console.error('moderate_message error:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 module.exports = new DiscordActions();

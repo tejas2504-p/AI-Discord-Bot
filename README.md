@@ -163,6 +163,22 @@ The AI Agent has been upgraded to understand user requests and natively perform 
 
 ---
 
+## 🛡️ AI Auto-Moderation
+
+The bot now natively listens to all messages in the server and runs them through a specialized, high-speed LLM moderation pipeline to enforce community guidelines autonomously.
+
+**Features:**
+*   **Real-time Analysis:** Messages are silently analyzed for spam, toxicity, harassment, hate speech, and abusive content.
+*   **Smart Thresholds:** Uses confidence scores (>0.70) and severity grades (Low, Medium, High) to avoid false positives. Short messages and admin messages are bypassed to save API tokens.
+*   **Autonomous Enforcement:** 
+    *   *Low Severity:* Sends a DM warning to the user.
+    *   *Medium Severity:* Deletes the message and warns the user.
+    *   *High Severity:* Deletes the message and issues an automatic 5-minute timeout.
+*   **Database Logging:** Every infraction is securely stored in MongoDB (`ModerationLog` schema) containing the category, severity, confidence, and action taken for easy auditing by server owners.
+*   **Manual Override:** Server owners can also explicitly invoke the `/ask moderate this message: [content]` command to have the AI test a piece of text!
+
+---
+
 ## 🛠️ Tech Stack
 
 | Technology | Purpose |
