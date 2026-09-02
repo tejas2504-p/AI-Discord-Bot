@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField, SnowflakeUtil } = require('discord.js');
 
 class DiscordActions {
     /**
@@ -135,6 +135,117 @@ class DiscordActions {
             await msg.delete();
             return { success: true };
         } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    async fetch_messages(interaction, channelId, limit) {
+        try {
+            let channel;
+            
+            // Clean up the channelId if it's a mention like <#123456789>
+            if (channelId.startsWith('<#') && channelId.endsWith('>')) {
+                channelId = channelId.slice(2, -1);
+            }
+
+            if (!/^\d+$/.test(channelId)) {
+                // If it's not purely digits, treat it as a channel name
+                const channelName = channelId.startsWith('#') ? channelId.slice(1) : channelId;
+                
+                // Try to find the channel in the current guild
+                if (interaction.guild) {
+                    channel = interaction.guild.channels.cache.find(c => 
+                        c.name.toLowerCase() === channelName.toLowerCase()
+                    );
+                }
+                
+                if (!channel) {
+                    return { success: false, error: `Channel with name '#${channelName}' not found.` };
+                }
+            } else {
+                // Fetch by ID
+                channel = await interaction.client.channels.fetch(channelId);
+                if (!channel) return { success: false, error: "Channel not found by ID." };
+            }
+
+            if (!channel.isTextBased()) return { success: false, error: "Channel is not text-based." };
+
+            const fetchLimit = Math.min(parseInt(limit) || 10, 100);
+            console.log(`[DISCORD] Fetching messages from ${channel.name || channel.id} (limit: ${fetchLimit})`);
+            
+            const messages = await channel.messages.fetch({ limit: fetchLimit });
+            console.log(`[DISCORD] Found ${messages.size} messages`);
+            
+            const result = [];
+            messages.forEach(msg => {
+                result.push({
+                    messageId: msg.id,
+                    authorId: msg.author.id,
+                    authorName: msg.author.username,
+                    content: msg.content,
+                    timestamp: msg.createdTimestamp
+                });
+            });
+            
+            return { success: true, messages: result };
+        } catch (error) {
+            console.error(`[DISCORD] Fetch failed:`, error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async bulk_delete_messages(interaction, messageIds) {
+        try {
+            const channel = interaction.channel;
+            
+            // Check permissions
+            if (!interaction.guild.members.me.permissionsIn(channel).has(PermissionsBitField.Flags.ManageMessages)) {
+                return { success: false, error: "The bot lacks 'Manage Messages' permission in this channel." };
+            }
+            if (!interaction.member.permissionsIn(channel).has(PermissionsBitField.Flags.ManageMessages)) {
+                return { success: false, error: "You lack 'Manage Messages' permission to perform this action." };
+            }
+
+            if (!Array.isArray(messageIds) || messageIds.length === 0) {
+                return { success: false, error: "No message IDs provided." };
+            }
+
+            if (messageIds.length > 100) {
+                return { success: false, error: "Cannot bulk delete more than 100 messages at once." };
+            }
+
+            // Identify 14 day old messages using Snowflake timestamps to avoid individual fetches
+            const twoWeeksAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
+            const validIds = [];
+            let oldCount = 0;
+
+            for (const id of messageIds) {
+                const timestamp = SnowflakeUtil.timestampFrom(id);
+                if (timestamp > twoWeeksAgo) {
+                    validIds.push(id);
+                } else {
+                    oldCount++;
+                }
+            }
+
+            if (validIds.length === 0) {
+                return { success: false, error: `All ${oldCount} provided messages were too old (14+ days) and cannot be bulk deleted by Discord limits.` };
+            }
+
+            const confirmed = await this.awaitConfirmation(interaction, `Bulk delete ${validIds.length} messages in #${channel.name}${oldCount > 0 ? ` (Ignoring ${oldCount} messages older than 14 days)` : ''}`);
+            if (!confirmed) return { success: false, error: "User denied the action." };
+
+            console.log(`[DISCORD] Bulk delete requested for ${validIds.length} messages`);
+            const deleted = await channel.bulkDelete(validIds, true);
+            console.log(`[DISCORD] Deleted ${deleted.size} messages`);
+
+            return { 
+                success: true, 
+                deletedCount: deleted.size,
+                ignoredOldCount: oldCount
+            };
+        } catch (error) {
+            console.error(`[DISCORD] Bulk delete failed:`, error.message);
             return { success: false, error: error.message };
         }
     }

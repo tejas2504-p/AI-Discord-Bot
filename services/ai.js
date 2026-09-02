@@ -417,6 +417,33 @@ Do not claim an action was completed unless the tool execution actually succeeds
                         },
                         required: ['content']
                     }
+                },
+                {
+                    name: 'fetch_messages',
+                    description: "Fetch recent messages from a Discord channel.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            channelId: { type: 'STRING', description: "The ID or name (e.g. #general) of the channel." },
+                            limit: { type: 'INTEGER', description: "Number of messages to fetch (max 100)." }
+                        },
+                        required: ['channelId', 'limit']
+                    }
+                },
+                {
+                    name: 'bulk_delete_messages',
+                    description: "Delete multiple messages securely. Cannot delete messages older than 14 days.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            messageIds: {
+                                type: 'ARRAY',
+                                items: { type: 'STRING' },
+                                description: "Array of message IDs to delete."
+                            }
+                        },
+                        required: ['messageIds']
+                    }
                 }
             ]
         }];
@@ -636,7 +663,7 @@ Do not claim an action was completed unless the tool execution actually succeeds
                         parts: [{ functionResponse: { name: 'delete_memory', response: { success: result } } }]
                     });
                     continue;
-                } else if (['send_message', 'create_channel', 'edit_message', 'delete_message', 'add_reaction', 'assign_role', 'remove_role', 'get_server_info', 'get_member_info', 'moderate_message'].includes(call.name)) {
+                } else if (['send_message', 'create_channel', 'edit_message', 'delete_message', 'add_reaction', 'assign_role', 'remove_role', 'get_server_info', 'get_member_info', 'moderate_message', 'fetch_messages', 'bulk_delete_messages'].includes(call.name)) {
                     if (showAskLogs) console.log(`[ASK 6] Executing tool ${call.name}`);
                     console.log(`[AGENT] Tool selected: ${call.name}`);
                     
@@ -657,6 +684,8 @@ Do not claim an action was completed unless the tool execution actually succeeds
                             case 'get_server_info': params = [options.interaction]; break;
                             case 'get_member_info': params = [options.interaction, args.userId]; break;
                             case 'moderate_message': params = [options.interaction, args.content]; break;
+                            case 'fetch_messages': params = [options.interaction, args.channelId, args.limit]; break;
+                            case 'bulk_delete_messages': params = [options.interaction, args.messageIds]; break;
                         }
                         try {
                             result = await discordActions[call.name](...params);
@@ -814,6 +843,8 @@ Do not claim an action was completed unless the tool execution actually succeeds
                                 { type: 'function', function: { name: 'get_server_info', description: "Gets information about the current Discord server.", parameters: { type: 'object', properties: {} } } },
                                 { type: 'function', function: { name: 'get_member_info', description: "Gets information about a specific server member.", parameters: { type: 'object', properties: { userId: { type: 'string' } }, required: ['userId'] } } },
                                 { type: 'function', function: { name: 'moderate_message', description: "Analyzes a message for toxicity/spam.", parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } } },
+                                { type: 'function', function: { name: 'fetch_messages', description: "Fetch recent messages from a Discord channel.", parameters: { type: 'object', properties: { channelId: { type: 'string' }, limit: { type: 'integer' } }, required: ['channelId', 'limit'] } } },
+                                { type: 'function', function: { name: 'bulk_delete_messages', description: "Delete multiple messages securely. Cannot delete messages older than 14 days.", parameters: { type: 'object', properties: { messageIds: { type: 'array', items: { type: 'string' } } }, required: ['messageIds'] } } },
                             ],
                             tool_choice: options.disableTools ? undefined : 'auto'
                         }),
@@ -961,7 +992,7 @@ Do not claim an action was completed unless the tool execution actually succeeds
                     const res = await memoryService.deleteMemory(options.userId, options.guildId, key);
                     if (showAskLogs) console.log(`[ASK 7] Tool completed`);
                     result = { success: res };
-                } else if (['send_message', 'create_channel', 'edit_message', 'delete_message', 'add_reaction', 'assign_role', 'remove_role', 'get_server_info', 'get_member_info', 'moderate_message'].includes(callName)) {
+                } else if (['send_message', 'create_channel', 'edit_message', 'delete_message', 'add_reaction', 'assign_role', 'remove_role', 'get_server_info', 'get_member_info', 'moderate_message', 'fetch_messages', 'bulk_delete_messages'].includes(callName)) {
                     if (showAskLogs) console.log(`[ASK 6] Executing tool ${callName}`);
                     console.log(`[AGENT] Tool selected: ${callName}`);
                     
@@ -980,6 +1011,8 @@ Do not claim an action was completed unless the tool execution actually succeeds
                             case 'get_server_info': params = [options.interaction]; break;
                             case 'get_member_info': params = [options.interaction, callArgs.userId]; break;
                             case 'moderate_message': params = [options.interaction, callArgs.content]; break;
+                            case 'fetch_messages': params = [options.interaction, callArgs.channelId, callArgs.limit]; break;
+                            case 'bulk_delete_messages': params = [options.interaction, callArgs.messageIds]; break;
                         }
                         try {
                             result = await discordActions[callName](...params);
