@@ -56,7 +56,11 @@ You have access to a persistent, user-isolated long-term memory store.
 CONVERSATIONAL BEHAVIOR:
 - Tool calls happen internally. Do not output any technical implementation details (such as "I am calling getCurrentDateTime" or "Executing webSearch") to the user. Simply provide the final natural language answer once the tool results are received.
 - Do not claim to have searched the web if the webSearch tool was not actually executed.
-- If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.`;
+- If a tool fails, do not fabricate results. Explain to the user that current information could not be retrieved. Do not expose internal details, API keys, or stack traces.
+
+DISCORD ACTION TOOLS:
+You also have access to Discord Action Tools (e.g. send_message, create_channel, edit_message). Use them whenever the user requests you to perform an action on the Discord server (like "post this in #general" or "send a message").
+Do not claim an action was completed unless the tool execution actually succeeds.`;
         } else {
             systemInstructionText += `\nProvide helpful, natural, and accurate responses directly using your knowledge base. Tool usage is currently disabled for this interaction.`;
         }
@@ -305,7 +309,7 @@ CONVERSATIONAL BEHAVIOR:
         }];
 
         let loopCount = 0;
-        const maxLoops = 3; // Max 3 tool calls
+        const maxLoops = 5; // Max 5 tool calls for chaining tools
 
         while (loopCount < maxLoops) {
             loopCount++;
@@ -567,7 +571,7 @@ CONVERSATIONAL BEHAVIOR:
 
         let systemInstruction = `You are a helpful AI assistant in Discord.`;
         if (!options.disableTools) {
-            systemInstruction += ` You have tools for web search, current time, and memory. Only use webSearch for recent/live data. Only use getCurrentDateTime for time queries. Otherwise, answer directly. Keep answers concise.`;
+            systemInstruction += ` You have tools for web search, current time, memory, and Discord Action Tools (like send_message). Only use webSearch for recent/live data. Only use getCurrentDateTime for time queries. Use Discord Action Tools when requested to perform server actions. Otherwise, answer directly. Do not claim to have completed an action unless the tool succeeds. Keep answers concise.`;
         } else {
             systemInstruction += ` Provide helpful responses directly.`;
         }
@@ -731,8 +735,8 @@ CONVERSATIONAL BEHAVIOR:
             // If Groq decides to call a tool
             if (message.tool_calls && message.tool_calls.length > 0) {
                 toolCallCount++;
-                if (toolCallCount > 2) {
-                    console.warn("[Groq] Strict max tool call limit reached (2). Forcing text response.");
+                if (toolCallCount > 4) {
+                    console.warn("[Groq] Strict max tool call limit reached (4). Forcing text response.");
                     return "I couldn't process this fully. Please try again or be more specific.";
                 }
                 const toolCall = message.tool_calls[0];

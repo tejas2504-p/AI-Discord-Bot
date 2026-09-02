@@ -54,13 +54,42 @@ class DiscordActions {
 
     async send_message(interaction, channelId, message) {
         try {
-            const channel = await interaction.client.channels.fetch(channelId);
-            if (!channel) return { success: false, error: "Channel not found." };
+            let channel;
+            
+            // Clean up the channelId if it's a mention like <#123456789>
+            if (channelId.startsWith('<#') && channelId.endsWith('>')) {
+                channelId = channelId.slice(2, -1);
+            }
+
+            if (!/^\d+$/.test(channelId)) {
+                // If it's not purely digits, treat it as a channel name
+                const channelName = channelId.startsWith('#') ? channelId.slice(1) : channelId;
+                
+                // Try to find the channel in the current guild
+                if (interaction.guild) {
+                    channel = interaction.guild.channels.cache.find(c => 
+                        c.name.toLowerCase() === channelName.toLowerCase()
+                    );
+                }
+                
+                if (!channel) {
+                    return { success: false, error: `Channel with name '#${channelName}' not found.` };
+                }
+            } else {
+                // Fetch by ID
+                channel = await interaction.client.channels.fetch(channelId);
+                if (!channel) return { success: false, error: "Channel not found by ID." };
+            }
+
             if (!channel.isTextBased()) return { success: false, error: "Channel is not text-based." };
             
+            console.log(`[DISCORD] Sending message to ${channel.name || channel.id}`);
             const sentMsg = await channel.send(message);
+            console.log(`[DISCORD] Message sent successfully (ID: ${sentMsg.id})`);
+            
             return { success: true, messageId: sentMsg.id };
         } catch (error) {
+            console.error(`[DISCORD] Failed to send message: ${error.message}`);
             return { success: false, error: error.message };
         }
     }
