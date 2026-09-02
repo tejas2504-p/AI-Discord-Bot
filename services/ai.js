@@ -304,6 +304,119 @@ Do not claim an action was completed unless the tool execution actually succeeds
                         },
                         required: ['key']
                     }
+                },
+                {
+                    name: 'send_message',
+                    description: "Sends a text message to a specific Discord channel.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            channelId: { type: 'STRING', description: "The ID or name (e.g. #general) of the channel." },
+                            message: { type: 'STRING', description: "The message content." }
+                        },
+                        required: ['channelId', 'message']
+                    }
+                },
+                {
+                    name: 'create_channel',
+                    description: "Creates a new Discord channel.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            name: { type: 'STRING' },
+                            type: { type: 'STRING' }
+                        },
+                        required: ['name', 'type']
+                    }
+                },
+                {
+                    name: 'edit_message',
+                    description: "Edits an existing Discord message.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            messageId: { type: 'STRING' },
+                            content: { type: 'STRING' }
+                        },
+                        required: ['messageId', 'content']
+                    }
+                },
+                {
+                    name: 'delete_message',
+                    description: "Deletes a Discord message.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            messageId: { type: 'STRING' }
+                        },
+                        required: ['messageId']
+                    }
+                },
+                {
+                    name: 'add_reaction',
+                    description: "Adds an emoji reaction to a message.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            messageId: { type: 'STRING' },
+                            emoji: { type: 'STRING' }
+                        },
+                        required: ['messageId', 'emoji']
+                    }
+                },
+                {
+                    name: 'assign_role',
+                    description: "Assigns a role to a server member.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            userId: { type: 'STRING' },
+                            roleId: { type: 'STRING' }
+                        },
+                        required: ['userId', 'roleId']
+                    }
+                },
+                {
+                    name: 'remove_role',
+                    description: "Removes a role from a server member.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            userId: { type: 'STRING' },
+                            roleId: { type: 'STRING' }
+                        },
+                        required: ['userId', 'roleId']
+                    }
+                },
+                {
+                    name: 'get_server_info',
+                    description: "Gets information about the current Discord server.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {}
+                    }
+                },
+                {
+                    name: 'get_member_info',
+                    description: "Gets information about a specific server member.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            userId: { type: 'STRING' }
+                        },
+                        required: ['userId']
+                    }
+                },
+                {
+                    name: 'moderate_message',
+                    description: "Analyzes a message for toxicity/spam.",
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            content: { type: 'STRING' }
+                        },
+                        required: ['content']
+                    }
                 }
             ]
         }];
@@ -521,6 +634,47 @@ Do not claim an action was completed unless the tool execution actually succeeds
                     contents.push({
                         role: 'function',
                         parts: [{ functionResponse: { name: 'delete_memory', response: { success: result } } }]
+                    });
+                    continue;
+                } else if (['send_message', 'create_channel', 'edit_message', 'delete_message', 'add_reaction', 'assign_role', 'remove_role', 'get_server_info', 'get_member_info', 'moderate_message'].includes(call.name)) {
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool ${call.name}`);
+                    console.log(`[AGENT] Tool selected: ${call.name}`);
+                    
+                    let result;
+                    if (!options.interaction) {
+                        result = { success: false, error: "No Discord interaction context available to execute this action." };
+                    } else {
+                        const args = call.args || {};
+                        let params = [];
+                        switch (call.name) {
+                            case 'send_message': params = [options.interaction, args.channelId, args.message]; break;
+                            case 'create_channel': params = [options.interaction, args.name, args.type]; break;
+                            case 'edit_message': params = [options.interaction, args.messageId, args.content]; break;
+                            case 'delete_message': params = [options.interaction, args.messageId]; break;
+                            case 'add_reaction': params = [options.interaction, args.messageId, args.emoji]; break;
+                            case 'assign_role': params = [options.interaction, args.userId, args.roleId]; break;
+                            case 'remove_role': params = [options.interaction, args.userId, args.roleId]; break;
+                            case 'get_server_info': params = [options.interaction]; break;
+                            case 'get_member_info': params = [options.interaction, args.userId]; break;
+                            case 'moderate_message': params = [options.interaction, args.content]; break;
+                        }
+                        try {
+                            result = await discordActions[call.name](...params);
+                        } catch (err) {
+                            console.error(`[DISCORD] Tool execution failed: ${err.message}`);
+                            result = { success: false, error: err.message };
+                        }
+                    }
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
+                    
+                    contents.push({
+                        role: 'model',
+                        parts: [{ functionCall: call }]
+                    });
+                    
+                    contents.push({
+                        role: 'function',
+                        parts: [{ functionResponse: { name: call.name, response: result } }]
                     });
                     continue;
                 } else {
@@ -807,6 +961,34 @@ Do not claim an action was completed unless the tool execution actually succeeds
                     const res = await memoryService.deleteMemory(options.userId, options.guildId, key);
                     if (showAskLogs) console.log(`[ASK 7] Tool completed`);
                     result = { success: res };
+                } else if (['send_message', 'create_channel', 'edit_message', 'delete_message', 'add_reaction', 'assign_role', 'remove_role', 'get_server_info', 'get_member_info', 'moderate_message'].includes(callName)) {
+                    if (showAskLogs) console.log(`[ASK 6] Executing tool ${callName}`);
+                    console.log(`[AGENT] Tool selected: ${callName}`);
+                    
+                    if (!options.interaction) {
+                        result = { success: false, error: "No Discord interaction context available to execute this action." };
+                    } else {
+                        let params = [];
+                        switch (callName) {
+                            case 'send_message': params = [options.interaction, callArgs.channelId, callArgs.message]; break;
+                            case 'create_channel': params = [options.interaction, callArgs.name, callArgs.type]; break;
+                            case 'edit_message': params = [options.interaction, callArgs.messageId, callArgs.content]; break;
+                            case 'delete_message': params = [options.interaction, callArgs.messageId]; break;
+                            case 'add_reaction': params = [options.interaction, callArgs.messageId, callArgs.emoji]; break;
+                            case 'assign_role': params = [options.interaction, callArgs.userId, callArgs.roleId]; break;
+                            case 'remove_role': params = [options.interaction, callArgs.userId, callArgs.roleId]; break;
+                            case 'get_server_info': params = [options.interaction]; break;
+                            case 'get_member_info': params = [options.interaction, callArgs.userId]; break;
+                            case 'moderate_message': params = [options.interaction, callArgs.content]; break;
+                        }
+                        try {
+                            result = await discordActions[callName](...params);
+                        } catch (err) {
+                            console.error(`[DISCORD] Tool execution failed: ${err.message}`);
+                            result = { success: false, error: err.message };
+                        }
+                    }
+                    if (showAskLogs) console.log(`[ASK 7] Tool completed`);
                 } else {
                     result = { error: `Unsupported tool name: ${callName}` };
                 }
